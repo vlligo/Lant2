@@ -4,14 +4,16 @@
 #include <QWidget>
 #include <QString>
 #include <QColor>
-#include <vector>
-#include <map>
+#include <QHash>
+#include <QCache>
+#include <QPair>
 
 class AntFieldWidget : public QWidget {
     Q_OBJECT
 
 public:
     explicit AntFieldWidget(QWidget *parent = nullptr);
+    ~AntFieldWidget();
 
     void setRules(const QString &rules);
     void reset();
@@ -37,33 +39,54 @@ protected:
     void resizeEvent(QResizeEvent *event) override;
 
 private:
+    // Coordinate conversion
+    inline QPoint screenToField(const QPoint &screenPos) const;
+    inline QPoint fieldToScreen(const QPoint &fieldPos) const;
+
+    // Drawing and state management
+    void redrawBuffer();
+    void updateStateColors();
     QColor stateToColor(int state) const;
-    QPointF screenToField(const QPointF &screenPos) const;
-    QPointF fieldToScreen(const QPointF &fieldPos) const;
-    void ensureAntVisible();
-    void expandGridIfNeeded(int newX, int newY);
+    void expandBounds(int x, int y);
 
-    // Use a map for sparse storage instead of a vector for the entire grid
-    std::map<std::pair<int, int>, int> cells;
-    QString rules;
-    int cellSize;
-    int antX, antY;
-    int antDir;
-    int stepCount;
+    // Performance-optimized cell storage
+    QHash<QPair<int, int>, quint8> cells;
+    QVector<QColor> stateColorCache;
 
-    // Dynamic grid bounds
-    int minX, maxX, minY, maxY;
+    // Ant state
+    int antX = 0, antY = 0;
+    int antDir = 0; // 0=up, 1=right, 2=down, 3=left
+    int stepCount = 0;
 
-    double offsetX, offsetY;
-    double zoomFactor;
+    // Grid bounds
+    int minX = -50, maxX = 50;
+    int minY = -50, maxY = 50;
 
+    // View state
+    double offsetX = 0, offsetY = 0;
+    double zoomFactor = 1.0;
+    int cellSize = 6;
+
+    // Interaction state
     bool dragging = false;
     QPoint lastMousePos;
 
-    // Performance optimization
+    // Rendering optimization
     bool needsRedraw = true;
     QPixmap bufferPixmap;
-    void redrawBuffer();
+
+    // Rules
+    QString rules;
+
+    // Constants
+    static constexpr double MIN_ZOOM = 0.1;
+    static constexpr double MAX_ZOOM = 20.0;
+    static constexpr int PROCESS_EVENTS_INTERVAL = 1000;
 };
+
+// Hash function for QPair<int, int>
+inline uint qHash(const QPair<int, int> &key, uint seed = 0) {
+    return qHash(key.first ^ (key.second << 16), seed);
+}
 
 #endif // ANTFIELDWIDGET_H

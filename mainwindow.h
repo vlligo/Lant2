@@ -2,16 +2,13 @@
 #define MAINWINDOW_H
 
 #include <QMainWindow>
-#include <QWidget>
-#include <QLineEdit>
-#include <QLabel>
-#include <QPushButton>
-#include <QComboBox>
-#include <QGroupBox>
-#include <QStatusBar>
-#include <QScrollArea>
-#include <QSpinBox>
+#include <QMap>
 
+class QLineEdit;
+class QLabel;
+class QPushButton;
+class QComboBox;
+class QSpinBox;
 class AntFieldWidget;
 
 class MainWindow : public QMainWindow {
@@ -26,10 +23,7 @@ private slots:
     void takeStep();
     void resetSimulation();
     void centerView();
-    void moveViewLeft();
-    void moveViewRight();
-    void moveViewUp();
-    void moveViewDown();
+    void moveView(int dx, int dy);
     void zoomIn();
     void zoomOut();
     void changeCellSize();
@@ -40,15 +34,18 @@ private slots:
 private:
     void setupUI();
     void setupConnections();
+    void loadPresets();
 
-    AntFieldWidget *antField;
-    QLineEdit *rulesEdit;
-    QLabel *rulesLabel;
-    QLabel *zoomLabel;
-    QLabel *stepsLabel;
-    QSpinBox *quickStepsSpin;
-    QPushButton *quickStepsButton;
+    AntFieldWidget *antField = nullptr;
+    QLineEdit *rulesEdit = nullptr;
+    QLabel *rulesLabel = nullptr;
+    QLabel *zoomLabel = nullptr;
+    QLabel *stepsLabel = nullptr;
+    QSpinBox *quickStepsSpin = nullptr;
+    QPushButton *quickStepsButton = nullptr;
+
     int lastCustomSteps = 10000;
+    QMap<int, QString> presets;
 };
 
 #endif // MAINWINDOW_H
