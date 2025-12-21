@@ -5,13 +5,25 @@
 #include <QString>
 #include <QColor>
 #include <QHash>
-#include <QCache>
 #include <QPair>
+#include <QVector>
+#include <QMutex>
+#include <QElapsedTimer>
+#include <QPoint>
+
+// Forward declaration
+struct AntStatisticsSummary;
 
 class AntFieldWidget : public QWidget {
     Q_OBJECT
 
 public:
+    struct CellStatistics {
+        int visitCount = 0;
+        int lastVisitStep = 0;
+        int firstVisitStep = 0;
+    };
+
     explicit AntFieldWidget(QWidget *parent = nullptr);
     ~AntFieldWidget();
 
@@ -25,10 +37,24 @@ public:
     void centerOnAnt();
     void moveView(int dx, int dy);
 
+    // Statistics methods
+    int getVisitCount(int x, int y) const;
+    QPoint getMostVisitedCell() const;
+    int getTotalVisitedCells() const;
+    int getUniqueVisitedCells() const;
+    AntStatisticsSummary getStatisticsSummary() const;
+    QHash<QPair<int, int>, CellStatistics> getAllStatistics() const;
+    void exportStatisticsToCSV(const QString &filename) const;
+    void resetStatistics();
+    void setStatisticsEnabled(bool enabled);
+    QVector<QPair<QPoint, int>> getTopVisitedCells(int count) const;
+
 signals:
     void antMoved(int x, int y, int direction, int steps);
     void zoomChanged(double zoom);
     void stepsChanged(int steps);
+    void statisticsUpdated(const AntStatisticsSummary &summary);
+    void cellVisited(const QPoint &cell, int visitCount);
 
 protected:
     void paintEvent(QPaintEvent *event) override;
@@ -40,17 +66,18 @@ protected:
 
 private:
     // Coordinate conversion
-    inline QPoint screenToField(const QPoint &screenPos) const;
-    inline QPoint fieldToScreen(const QPoint &fieldPos) const;
+    QPoint screenToField(const QPoint &screenPos) const;
+    QPoint fieldToScreen(const QPoint &fieldPos) const;
 
     // Drawing and state management
     void redrawBuffer();
     void updateStateColors();
     QColor stateToColor(int state) const;
-    void expandBounds(int x, int y);
+    void updateStatistics(int x, int y);
 
     // Performance-optimized cell storage
     QHash<QPair<int, int>, quint8> cells;
+    QHash<QPair<int, int>, CellStatistics> cellStatistics;
     QVector<QColor> stateColorCache;
 
     // Ant state
@@ -67,6 +94,13 @@ private:
     double zoomFactor = 1.0;
     int cellSize = 6;
 
+    // Statistics state
+    QPoint mostVisitedCell;
+    int maxVisits = 0;
+    bool statisticsEnabled = true;
+    mutable QMutex statisticsMutex;
+    QElapsedTimer simulationTimer;
+
     // Interaction state
     bool dragging = false;
     QPoint lastMousePos;
@@ -77,16 +111,20 @@ private:
 
     // Rules
     QString rules;
-
-    // Constants
-    static constexpr double MIN_ZOOM = 0.1;
-    static constexpr double MAX_ZOOM = 20.0;
-    static constexpr int PROCESS_EVENTS_INTERVAL = 1000;
 };
 
-// Hash function for QPair<int, int>
 inline uint qHash(const QPair<int, int> &key, uint seed = 0) {
     return qHash(key.first ^ (key.second << 16), seed);
 }
+
+struct AntStatisticsSummary {
+    int totalCellsVisited = 0;
+    int maxVisitsPerCell = 0;
+    QPoint mostVisitedCell;
+    double averageVisits = 0.0;
+    int uniqueCellsVisited = 0;
+    QHash<int, int> visitsDistribution;
+    qint64 simulationTimeMs = 0;
+};
 
 #endif // ANTFIELDWIDGET_H

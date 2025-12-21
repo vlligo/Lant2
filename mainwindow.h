@@ -2,50 +2,71 @@
 #define MAINWINDOW_H
 
 #include <QMainWindow>
-#include <QMap>
+#include <QHash>
+#include <QPoint>
 
-class QLineEdit;
-class QLabel;
-class QPushButton;
-class QComboBox;
-class QSpinBox;
+// Forward declarations
 class AntFieldWidget;
+class QLineEdit;
+class QSpinBox;
+class QPushButton;
+class QCheckBox;
+class QLabel;
+class QTableWidget;
+class QGroupBox;
 
 class MainWindow : public QMainWindow {
     Q_OBJECT
 
 public:
-    MainWindow(QWidget *parent = nullptr);
+    explicit MainWindow(QWidget *parent = nullptr);
 
 private slots:
     void updateRules();
     void onAntMoved(int x, int y, int direction, int steps);
+    void onCellVisited(const QPoint &cell, int visitCount);
+    void updateStatisticsTable();
     void takeStep();
+    void onQuickStepsClicked();
     void resetSimulation();
     void centerView();
     void moveView(int dx, int dy);
     void zoomIn();
     void zoomOut();
+    void onZoomChanged(double zoom);
     void changeCellSize();
     void loadPreset(int index);
-    void onZoomChanged(double zoom);
-    void onQuickStepsClicked();
+    void showStatistics();
+    void toggleStatistics(bool enabled);
+    void exportStatistics();
+    void showCellDetails();
 
 private:
+    void loadPresets();
     void setupUI();
     void setupConnections();
-    void loadPresets();
+    void updateQuickStatistics();
 
-    AntFieldWidget *antField = nullptr;
-    QLineEdit *rulesEdit = nullptr;
-    QLabel *rulesLabel = nullptr;
-    QLabel *zoomLabel = nullptr;
-    QLabel *stepsLabel = nullptr;
-    QSpinBox *quickStepsSpin = nullptr;
-    QPushButton *quickStepsButton = nullptr;
+    QHash<int, QString> presets;
+    AntFieldWidget *antField;
 
-    int lastCustomSteps = 10000;
-    QMap<int, QString> presets;
+    // UI widgets
+    QLineEdit *rulesEdit;
+    QSpinBox *quickStepsSpin;
+    QPushButton *quickStepsButton;
+    QCheckBox *statsCheckBox;
+    QLabel *zoomLabel;
+    QLabel *stepsLabel;
+    QLabel *statsLabel;
+    QLabel *uniqueCellsLabel;
+    QLabel *mostVisitedLabel;
+    QLabel *maxVisitsLabel;
+    QLabel *averageVisitsLabel;
+    QLabel *rulesLabel;
+    QGroupBox *statsTableGroup;
+    QTableWidget *statsTable;
+
+    int lastCustomSteps = 1000;
 };
 
 #endif // MAINWINDOW_H
