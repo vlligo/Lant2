@@ -24,12 +24,13 @@ public:
 private slots:
     void updateRules();
     void onAntMoved(int x, int y, int direction, int steps);
-    // void onCellVisited(const QPoint &cell, int visitCount);
     void updateStatisticsTable();
     void takeStep();
     void onQuickStepsClicked();
     void resetSimulation();
     void centerView();
+    void centerOnMostVisited();
+    void centerOnCoordinates();
     void moveView(int dx, int dy);
     void zoomIn();
     void zoomOut();
@@ -40,6 +41,8 @@ private slots:
     void toggleStatistics(bool enabled);
     void exportStatistics();
     void showCellDetails();
+    void centerOnTableCell();
+    void centerOnSelectedStatistic();
 
 private:
     void loadPresets();

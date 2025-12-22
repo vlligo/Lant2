@@ -127,9 +127,15 @@ void MainWindow::setupUI() {
     QPushButton *cellSizeButton = new QPushButton("Cell Size...");
     controlLayout->addWidget(cellSizeButton, row, 4);
 
-    // Changed from "Show Statistics" to "Toggle Statistics Panel"
     QPushButton *togglePanelButton = new QPushButton("Show Statistics Panel");
     controlLayout->addWidget(togglePanelButton, row, 5);
+
+    // New centering buttons
+    QPushButton *centerMostVisitedButton = new QPushButton("Center Most Visited");
+    controlLayout->addWidget(centerMostVisitedButton, row, 6);
+
+    QPushButton *centerCoordinatesButton = new QPushButton("Center Coordinates...");
+    controlLayout->addWidget(centerCoordinatesButton, row, 7);
 
     row++;
 
@@ -150,8 +156,16 @@ void MainWindow::setupUI() {
     rightButton->setFixedSize(40, 30);
     controlLayout->addWidget(rightButton, row, 3);
 
+    // Add a button to center on selected table cell
+    QPushButton *centerTableButton = new QPushButton("Center Selected");
+    controlLayout->addWidget(centerTableButton, row, 4);
+
+    // Add a button to show statistics centering menu
+    QPushButton *centerStatsButton = new QPushButton("Center Stats...");
+    controlLayout->addWidget(centerStatsButton, row, 5);
+
     stepsLabel = new QLabel("Total steps: 0");
-    controlLayout->addWidget(stepsLabel, row, 4, 1, 2);
+    controlLayout->addWidget(stepsLabel, row, 6, 1, 2);
 
     row++;
 
@@ -258,6 +272,14 @@ void MainWindow::setupConnections() {
             connect(btn, &QPushButton::clicked, this, &MainWindow::resetSimulation);
         } else if (text == "Center on Ant") {
             connect(btn, &QPushButton::clicked, this, &MainWindow::centerView);
+        } else if (text == "Center Most Visited") {
+            connect(btn, &QPushButton::clicked, this, &MainWindow::centerOnMostVisited);
+        } else if (text == "Center Coordinates...") {
+            connect(btn, &QPushButton::clicked, this, &MainWindow::centerOnCoordinates);
+        } else if (text == "Center Selected") {
+            connect(btn, &QPushButton::clicked, this, &MainWindow::centerOnTableCell);
+        } else if (text == "Center Stats...") {
+            connect(btn, &QPushButton::clicked, this, &MainWindow::centerOnSelectedStatistic);
         } else if (text == "Zoom In") {
             connect(btn, &QPushButton::clicked, this, &MainWindow::zoomIn);
         } else if (text == "Zoom Out") {
@@ -440,6 +462,91 @@ void MainWindow::resetSimulation() {
 
 void MainWindow::centerView() {
     antField->centerOnAnt();
+}
+
+void MainWindow::centerOnMostVisited() {
+    QPoint mostVisited = antField->getMostVisitedCell();
+    antField->centerOnPoint(mostVisited);
+}
+
+void MainWindow::centerOnCoordinates() {
+    bool ok;
+    QString text = QInputDialog::getText(this, "Center on Coordinates",
+                                         "Enter coordinates to center on (x,y):",
+                                         QLineEdit::Normal, "0,0", &ok);
+    if (ok && !text.isEmpty()) {
+        QStringList coords = text.split(',');
+        if (coords.size() == 2) {
+            bool xOk, yOk;
+            int x = coords[0].trimmed().toInt(&xOk);
+            int y = coords[1].trimmed().toInt(&yOk);
+            if (xOk && yOk) {
+                antField->centerOnPoint(x, y);
+            } else {
+                QMessageBox::warning(this, "Invalid Input",
+                                     "Please enter valid integers for coordinates.");
+            }
+        } else {
+            QMessageBox::warning(this, "Invalid Format",
+                                 "Please enter coordinates in the format: x,y");
+        }
+    }
+}
+
+void MainWindow::centerOnTableCell() {
+    int row = statsTable->currentRow();
+    if (row >= 0) {
+        QTableWidgetItem *item = statsTable->item(row, 0);
+        if (item) {
+            QString text = item->text();
+            // Extract coordinates from format like "(x, y)"
+            text = text.mid(1, text.length() - 2); // Remove parentheses
+            QStringList coords = text.split(',');
+            if (coords.size() == 2) {
+                bool xOk, yOk;
+                int x = coords[0].trimmed().toInt(&xOk);
+                int y = coords[1].trimmed().toInt(&yOk);
+                if (xOk && yOk) {
+                    antField->centerOnPoint(x, y);
+                }
+            }
+        }
+    } else {
+        QMessageBox::information(this, "No Selection",
+                                 "Please select a cell from the statistics table first.");
+    }
+}
+
+void MainWindow::centerOnSelectedStatistic() {
+    // Get the currently selected statistic (most visited, second most visited, etc.)
+    // We'll create a menu to choose which statistic to center on
+    QMenu menu(this);
+
+    // Get top 5 visited cells
+    auto topCells = antField->getTopVisitedCells(5);
+
+    if (topCells.isEmpty()) {
+        QMessageBox::information(this, "No Statistics",
+                                 "No statistics available yet.");
+        return;
+    }
+
+    for (int i = 0; i < topCells.size(); ++i) {
+        const auto &cell = topCells[i];
+        QString text = QString("%1. (%2, %3) - %4 visits")
+                           .arg(i + 1)
+                           .arg(cell.first.x())
+                           .arg(cell.first.y())
+                           .arg(cell.second);
+        QAction *action = menu.addAction(text);
+        action->setData(QVariant::fromValue(cell.first));
+    }
+
+    QAction *selected = menu.exec(QCursor::pos());
+    if (selected) {
+        QPoint point = selected->data().value<QPoint>();
+        antField->centerOnPoint(point);
+    }
 }
 
 void MainWindow::moveView(int dx, int dy) {

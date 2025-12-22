@@ -35,7 +35,11 @@ public:
     void setZoom(double zoom);
     double getZoom() const { return zoomFactor; }
     int getCellSize() const { return cellSize; }
+
+    // View centering methods
     void centerOnAnt();
+    void centerOnPoint(int x, int y);
+    void centerOnPoint(const QPoint &point);
     void moveView(int dx, int dy);
 
     // Statistics methods

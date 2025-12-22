@@ -582,3 +582,16 @@ void AntFieldWidget::resizeEvent(QResizeEvent *event) {
     QWidget::resizeEvent(event);
     needsRedraw = true;
 }
+
+
+void AntFieldWidget::centerOnPoint(int x, int y) {
+    double scaledCellSize = cellSize * zoomFactor;
+    offsetX = width() / 2.0 - x * scaledCellSize;
+    offsetY = height() / 2.0 - y * scaledCellSize;
+    needsRedraw = true;
+    update();
+}
+
+void AntFieldWidget::centerOnPoint(const QPoint &point) {
+    centerOnPoint(point.x(), point.y());
+}
