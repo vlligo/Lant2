@@ -10,6 +10,7 @@
 #include <QMutex>
 #include <QElapsedTimer>
 #include <QPoint>
+#include <QMap>
 
 // Forward declaration
 struct AntStatisticsSummary;
@@ -43,11 +44,13 @@ public:
     int getTotalVisitedCells() const;
     int getUniqueVisitedCells() const;
     AntStatisticsSummary getStatisticsSummary() const;
-    QHash<QPair<int, int>, CellStatistics> getAllStatistics() const;
     void exportStatisticsToCSV(const QString &filename) const;
     void resetStatistics();
     void setStatisticsEnabled(bool enabled);
     QVector<QPair<QPoint, int>> getTopVisitedCells(int count) const;
+
+    // Performance optimized methods
+    QVector<QPoint> getRecentlyVisitedCells() const { return recentlyVisitedCells; }
 
 signals:
     void antMoved(int x, int y, int direction, int steps);
@@ -73,10 +76,15 @@ private:
     void redrawBuffer();
     void updateStateColors();
     QColor stateToColor(int state) const;
+
+    // Optimized statistics update
     void updateStatistics(int x, int y);
+    void updateMostVisitedCell(int x, int y, int newVisits);
 
     // Performance-optimized cell storage
     QHash<QPair<int, int>, quint8> cells;
+
+    // Optimized statistics: use QMap for ordered access when needed
     QHash<QPair<int, int>, CellStatistics> cellStatistics;
     QVector<QColor> stateColorCache;
 
@@ -94,12 +102,17 @@ private:
     double zoomFactor = 1.0;
     int cellSize = 6;
 
-    // Statistics state
+    // Statistics state - simplified and optimized
     QPoint mostVisitedCell;
     int maxVisits = 0;
+    int uniqueCellsCount = 0;
     bool statisticsEnabled = true;
     mutable QMutex statisticsMutex;
     QElapsedTimer simulationTimer;
+
+    // Performance optimization: track recently visited cells for faster drawing
+    QVector<QPoint> recentlyVisitedCells;
+    static const int RECENT_CELLS_BUFFER_SIZE = 1000;
 
     // Interaction state
     bool dragging = false;
@@ -123,7 +136,6 @@ struct AntStatisticsSummary {
     QPoint mostVisitedCell;
     double averageVisits = 0.0;
     int uniqueCellsVisited = 0;
-    QHash<int, int> visitsDistribution;
     qint64 simulationTimeMs = 0;
 };
 

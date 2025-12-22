@@ -21,6 +21,7 @@ AntFieldWidget::~AntFieldWidget() {
     cells.clear();
     cellStatistics.clear();
     stateColorCache.clear();
+    recentlyVisitedCells.clear();
 }
 
 void AntFieldWidget::setRules(const QString &rules) {
@@ -45,8 +46,10 @@ void AntFieldWidget::reset() {
     if (statisticsEnabled) {
         QMutexLocker locker(&statisticsMutex);
         cellStatistics.clear();
+        recentlyVisitedCells.clear();
         mostVisitedCell = QPoint(0, 0);
         maxVisits = 0;
+        uniqueCellsCount = 0;
     }
 
     antX = antY = 0;
@@ -83,14 +86,12 @@ void AntFieldWidget::nextStep(int steps) {
         QPoint(-1, 0)   // Left
     };
 
+    // Batch statistics updates for performance
+    QHash<QPair<int, int>, int> batchUpdates;
+
     for (int s = 0; s < steps; ++s) {
         QPair<int, int> cellKey(antX, antY);
         quint8 &currentState = cells[cellKey];
-
-        // IMPORTANT: Always update statistics for the current cell BEFORE changing state
-        if (statisticsEnabled) {
-            updateStatistics(antX, antY);
-        }
 
         if (currentState < ruleLength) {
             QChar rule = rules.at(currentState);
@@ -105,12 +106,17 @@ void AntFieldWidget::nextStep(int steps) {
             }
         }
 
+        // Batch statistics update for performance
+        if (statisticsEnabled) {
+            batchUpdates[cellKey]++;
+        }
+
         // Move ant
         const QPoint &dir = directions[antDir];
         antX += dir.x();
         antY += dir.y();
 
-        // Expand bounds
+        // Expand bounds (do this less frequently for performance)
         if (antX < minX) minX = antX;
         if (antX > maxX) maxX = antX;
         if (antY < minY) minY = antY;
@@ -119,67 +125,46 @@ void AntFieldWidget::nextStep(int steps) {
         stepCount++;
     }
 
+    // Apply batched statistics updates
+    if (statisticsEnabled && !batchUpdates.isEmpty()) {
+        QMutexLocker locker(&statisticsMutex);
+
+        for (auto it = batchUpdates.constBegin(); it != batchUpdates.constEnd(); ++it) {
+            QPair<int, int> cellKey = it.key();
+            int visitsToAdd = it.value();
+
+            CellStatistics &stats = cellStatistics[cellKey];
+
+            // Initialize first visit
+            if (stats.visitCount == 0) {
+                stats.firstVisitStep = stepCount - visitsToAdd + 1;
+                uniqueCellsCount++;
+            }
+
+            // Update visit count
+            stats.visitCount += visitsToAdd;
+            stats.lastVisitStep = stepCount;
+
+            // Track recently visited cells for faster drawing
+            recentlyVisitedCells.append(QPoint(cellKey.first, cellKey.second));
+            if (recentlyVisitedCells.size() > RECENT_CELLS_BUFFER_SIZE) {
+                recentlyVisitedCells.remove(0, recentlyVisitedCells.size() - RECENT_CELLS_BUFFER_SIZE);
+            }
+
+            // Update max visits if needed
+            if (stats.visitCount > maxVisits) {
+                maxVisits = stats.visitCount;
+                mostVisitedCell = QPoint(cellKey.first, cellKey.second);
+            }
+        }
+    }
+
     setUpdatesEnabled(true);
     needsRedraw = true;
     update();
 
     emit antMoved(antX, antY, antDir, stepCount);
     emit stepsChanged(stepCount);
-}
-
-void AntFieldWidget::updateStatistics(int x, int y) {
-    QMutexLocker locker(&statisticsMutex);
-    QPair<int, int> cellKey(x, y);
-    CellStatistics &stats = cellStatistics[cellKey];
-
-    // Initialize first visit
-    if (stats.visitCount == 0) {
-        stats.firstVisitStep = stepCount;
-    }
-
-    // Update visit count
-    stats.visitCount++;
-    stats.lastVisitStep = stepCount;
-
-    // Update max visits
-    if (stats.visitCount > maxVisits) {
-        maxVisits = stats.visitCount;
-        mostVisitedCell = QPoint(x, y);
-    }
-
-    // Unlock before emitting signals
-    locker.unlock();
-
-    // Emit cell visited signal
-    emit cellVisited(QPoint(x, y), stats.visitCount);
-}
-
-AntStatisticsSummary AntFieldWidget::getStatisticsSummary() const {
-    QMutexLocker locker(&statisticsMutex);
-    AntStatisticsSummary summary;
-
-    summary.totalCellsVisited = stepCount;
-    summary.maxVisitsPerCell = maxVisits;
-    summary.mostVisitedCell = mostVisitedCell;
-    summary.uniqueCellsVisited = cellStatistics.size();
-    summary.simulationTimeMs = simulationTimer.elapsed();
-
-    // Calculate average visits
-    if (summary.uniqueCellsVisited > 0) {
-        int totalVisits = 0;
-        for (const auto &stats : cellStatistics) {
-            totalVisits += stats.visitCount;
-        }
-        summary.averageVisits = static_cast<double>(totalVisits) / summary.uniqueCellsVisited;
-    }
-
-    // Update visits distribution
-    summary.visitsDistribution.clear();
-    for (const auto &stats : cellStatistics) {
-        summary.visitsDistribution[stats.visitCount]++;
-    }
-
-    return summary;
 }
 
 int AntFieldWidget::getVisitCount(int x, int y) const {
@@ -199,30 +184,82 @@ int AntFieldWidget::getTotalVisitedCells() const {
 
 int AntFieldWidget::getUniqueVisitedCells() const {
     QMutexLocker locker(&statisticsMutex);
-    return cellStatistics.size();
+    return uniqueCellsCount;
 }
 
-QHash<QPair<int, int>, AntFieldWidget::CellStatistics> AntFieldWidget::getAllStatistics() const {
+AntStatisticsSummary AntFieldWidget::getStatisticsSummary() const {
     QMutexLocker locker(&statisticsMutex);
-    return cellStatistics;
+    AntStatisticsSummary summary;
+
+    summary.totalCellsVisited = stepCount;
+    summary.maxVisitsPerCell = maxVisits;
+    summary.mostVisitedCell = mostVisitedCell;
+    summary.uniqueCellsVisited = uniqueCellsCount;
+    summary.simulationTimeMs = simulationTimer.elapsed();
+
+    // Calculate average visits (only if we have visited cells)
+    if (summary.uniqueCellsVisited > 0) {
+        // We can approximate average visits efficiently
+        summary.averageVisits = static_cast<double>(summary.totalCellsVisited) / summary.uniqueCellsVisited;
+    }
+
+    return summary;
 }
 
 QVector<QPair<QPoint, int>> AntFieldWidget::getTopVisitedCells(int count) const {
     QMutexLocker locker(&statisticsMutex);
-    QVector<QPair<QPoint, int>> result;
 
-    for (auto it = cellStatistics.constBegin(); it != cellStatistics.constEnd(); ++it) {
-        result.append(qMakePair(QPoint(it.key().first, it.key().second), it->visitCount));
+    if (cellStatistics.isEmpty()) {
+        return QVector<QPair<QPoint, int>>();
     }
 
-    // Sort by visit count (descending)
-    std::sort(result.begin(), result.end(),
-              [](const QPair<QPoint, int> &a, const QPair<QPoint, int> &b) {
-                  return a.second > b.second;
-              });
+    // Use a simple selection algorithm for top N cells (more efficient than full sort for large datasets)
+    QVector<QPair<QPoint, int>> result;
+    result.reserve(qMin(count, cellStatistics.size()));
 
-    if (result.size() > count) {
-        result.resize(count);
+    // If count is small relative to total, use a partial sort approach
+    if (count * 10 < cellStatistics.size()) {
+        // Copy first 'count' items
+        auto it = cellStatistics.constBegin();
+        for (int i = 0; i < count && it != cellStatistics.constEnd(); ++i, ++it) {
+            result.append(qMakePair(QPoint(it.key().first, it.key().second), it->visitCount));
+        }
+
+        // Sort and maintain top N
+        std::sort(result.begin(), result.end(),
+                  [](const QPair<QPoint, int> &a, const QPair<QPoint, int> &b) {
+                      return a.second > b.second;
+                  });
+
+        // Process remaining items
+        for (; it != cellStatistics.constEnd(); ++it) {
+            int visits = it->visitCount;
+            if (visits > result.last().second) {
+                // Insert in sorted position
+                auto pos = std::lower_bound(result.begin(), result.end(), visits,
+                                            [](const QPair<QPoint, int> &item, int value) {
+                                                return item.second > value;
+                                            });
+                if (pos != result.end()) {
+                    result.insert(pos, qMakePair(QPoint(it.key().first, it.key().second), visits));
+                    result.removeLast();
+                }
+            }
+        }
+    } else {
+        // Full sort for smaller datasets
+        for (auto it = cellStatistics.constBegin(); it != cellStatistics.constEnd(); ++it) {
+            result.append(qMakePair(QPoint(it.key().first, it.key().second), it->visitCount));
+        }
+
+        std::sort(result.begin(), result.end(),
+                  [](const QPair<QPoint, int> &a, const QPair<QPoint, int> &b) {
+                      return a.second > b.second;
+                  });
+
+        if (result.size() > count) {
+            result.resize(count);
+        }
     }
 
     return result;
@@ -254,8 +291,10 @@ void AntFieldWidget::exportStatisticsToCSV(const QString &filename) const {
 void AntFieldWidget::resetStatistics() {
     QMutexLocker locker(&statisticsMutex);
     cellStatistics.clear();
+    recentlyVisitedCells.clear();
     mostVisitedCell = QPoint(0, 0);
     maxVisits = 0;
+    uniqueCellsCount = 0;
     simulationTimer.restart();
 }
 
@@ -356,62 +395,91 @@ void AntFieldWidget::redrawBuffer() {
         }
     }
 
-    // First, draw all cells that have been visited (including state 0 cells)
+    // Draw all cells
     for (int y = drawStartY; y < drawEndY; ++y) {
         for (int x = drawStartX; x < drawEndX; ++x) {
-            auto it = cells.constFind(QPair<int, int>(x, y));
+            QPair<int, int> cellKey(x, y);
+            auto it = cells.constFind(cellKey);
+            QColor color;
+
             if (it != cells.constEnd()) {
                 // Cell exists in the grid
                 int state = it.value();
-                QColor color;
-
-                if (state > 0) {
-                    // Colored cell
-                    color = stateToColor(state);
+                color = (state > 0) ? stateToColor(state) : Qt::white;
+            } else {
+                // Check if cell was visited (for statistics)
+                if (statisticsEnabled) {
+                    // Check if this cell has been visited at all
+                    QMutexLocker locker(&statisticsMutex);
+                    auto statIt = cellStatistics.constFind(cellKey);
+                    if (statIt != cellStatistics.constEnd()) {
+                        // Cell has been visited, but has state 0 (white)
+                        color = Qt::white;
+                    } else {
+                        // Cell not visited, use background color
+                        color = QColor(240, 240, 240);
+                    }
                 } else {
-                    // White cell (state 0)
-                    color = Qt::white;
+                    color = QColor(240, 240, 240);
                 }
-
-                double screenX = offsetX + x * scaledCellSize;
-                double screenY = offsetY + y * scaledCellSize;
-                painter.fillRect(QRectF(screenX, screenY,
-                                        scaledCellSize, scaledCellSize), color);
             }
+
+            double screenX = offsetX + x * scaledCellSize;
+            double screenY = offsetY + y * scaledCellSize;
+            painter.fillRect(QRectF(screenX, screenY,
+                                    scaledCellSize, scaledCellSize), color);
         }
     }
 
-    // Draw visit counts for ALL visited cells (when zoomed in enough)
-    if (scaledCellSize >= 12 && statisticsEnabled) {
+    // Draw visit counts for ALL visited cells in the visible area
+    if (scaledCellSize >= 8 && statisticsEnabled) {
         painter.setPen(Qt::black);
-        painter.setFont(QFont("Arial", 8));
 
-        // Check ALL cells in the visible area for visit counts
-        for (int y = drawStartY; y < drawEndY; ++y) {
-            for (int x = drawStartX; x < drawEndX; ++x) {
-                int visits = getVisitCount(x, y);
+        // Adjust font size based on cell size
+        if (scaledCellSize < 12) {
+            painter.setFont(QFont("Arial", 6));
+        } else {
+            painter.setFont(QFont("Arial", 8));
+        }
 
-                // Draw visit count if cell has been visited at least once
-                if (visits > 0) {
-                    double screenX = offsetX + x * scaledCellSize;
-                    double screenY = offsetY + y * scaledCellSize;
+        // Get a copy of cellStatistics while holding the mutex
+        QHash<QPair<int, int>, CellStatistics> statsCopy;
+        {
+            QMutexLocker locker(&statisticsMutex);
+            statsCopy = cellStatistics;
+        }
 
-                    // Check if the cell is white (state 0 or doesn't exist in cells)
-                    auto it = cells.constFind(QPair<int, int>(x, y));
-                    bool isWhiteCell = (it == cells.constEnd() || it.value() == 0);
+        // Now iterate through all visited cells and draw labels for those in visible area
+        for (auto it = statsCopy.constBegin(); it != statsCopy.constEnd(); ++it) {
+            int x = it.key().first;
+            int y = it.key().second;
+            int visits = it->visitCount;
 
-                    if (isWhiteCell) {
-                        // For white cells, draw a subtle background to make text readable
-                        painter.setBrush(QColor(245, 245, 245, 200));
-                        painter.setPen(Qt::NoPen);
-                        painter.drawRect(QRectF(screenX, screenY,
-                                                scaledCellSize, scaledCellSize));
-                        painter.setPen(Qt::black);
-                    }
+            // Skip if not in visible area
+            if (x < drawStartX || x >= drawEndX || y < drawStartY || y >= drawEndY) {
+                continue;
+            }
 
-                    painter.drawText(QRectF(screenX, screenY, scaledCellSize, scaledCellSize),
-                                     Qt::AlignCenter, QString::number(visits));
+            // Draw visit count for ALL visited cells (even with 1 visit)
+            if (visits > 0) {
+                double screenX = offsetX + x * scaledCellSize;
+                double screenY = offsetY + y * scaledCellSize;
+
+                // Check if the cell is white (state 0)
+                auto cellIt = cells.constFind(QPair<int, int>(x, y));
+                bool isWhiteCell = (cellIt == cells.constEnd() || cellIt.value() == 0);
+
+                if (isWhiteCell) {
+                    // For white cells, draw a subtle background to make text readable
+                    painter.setBrush(QColor(245, 245, 245, 200));
+                    painter.setPen(Qt::NoPen);
+                    painter.drawRect(QRectF(screenX, screenY,
+                                            scaledCellSize, scaledCellSize));
+                    painter.setPen(Qt::black);
                 }
+
+                painter.drawText(QRectF(screenX, screenY, scaledCellSize, scaledCellSize),
+                                 Qt::AlignCenter, QString::number(visits));
             }
         }
     }

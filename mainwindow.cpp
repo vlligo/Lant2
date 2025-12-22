@@ -241,12 +241,7 @@ void MainWindow::setupConnections() {
         stepsLabel->setText(QString("Total steps: %1").arg(steps));
     });
 
-    // Statistics signals - update quick stats when a cell is visited
-    connect(antField, &AntFieldWidget::cellVisited, this, [this](const QPoint &cell, int visitCount) {
-        onCellVisited(cell, visitCount);
-        // Update quick statistics when a cell is visited
-        updateQuickStatistics();
-    });
+    // Remove the cellVisited connection since we're using timer-based updates
 
     // Buttons
     QList<QPushButton*> buttons = findChildren<QPushButton*>();
@@ -303,16 +298,16 @@ void MainWindow::setupConnections() {
             }
         }
     });
-    statsTimer->start(100);  // Update more frequently (100ms)
+    statsTimer->start(500);  // Update every 500ms
 }
 
-// ADD THIS FUNCTION DEFINITION - IT WAS MISSING
 void MainWindow::updateQuickStatistics() {
     if (!statsCheckBox->isChecked()) {
         uniqueCellsLabel->setText("Unique cells: 0");
         mostVisitedLabel->setText("Most visited: (0,0)");
         maxVisitsLabel->setText("Max visits: 0");
         averageVisitsLabel->setText("Average: 0.0");
+        statsLabel->clear();  // Clear the status bar label
         return;
     }
 
@@ -323,6 +318,14 @@ void MainWindow::updateQuickStatistics() {
                                   .arg(summary.mostVisitedCell.y()));
     maxVisitsLabel->setText(QString("Max visits: %1").arg(summary.maxVisitsPerCell));
     averageVisitsLabel->setText(QString("Average: %1").arg(summary.averageVisits, 0, 'f', 2));
+
+    // Update status bar with most visited cell info
+    if (summary.maxVisitsPerCell > 0) {
+        statsLabel->setText(QString("Most visited: (%1, %2) = %3 times")
+                                .arg(summary.mostVisitedCell.x())
+                                .arg(summary.mostVisitedCell.y())
+                                .arg(summary.maxVisitsPerCell));
+    }
 }
 
 void MainWindow::updateRules() {
@@ -384,15 +387,15 @@ void MainWindow::onAntMoved(int x, int y, int direction, int steps) {
                                  .arg(x).arg(y).arg(dirStr).arg(steps));
 }
 
-void MainWindow::onCellVisited(const QPoint &cell, int visitCount) {
-    // Optional: show visit count in status bar for the current cell
-    QPoint mostVisited = antField->getMostVisitedCell();
-    if (cell.x() == mostVisited.x() &&
-        cell.y() == mostVisited.y()) {
-        statsLabel->setText(QString("Most visited: (%1, %2) = %3 times")
-                                .arg(cell.x()).arg(cell.y()).arg(visitCount));
-    }
-}
+// void MainWindow::onCellVisited(const QPoint &cell, int visitCount) {
+//     // Optional: show visit count in status bar for the current cell
+//     QPoint mostVisited = antField->getMostVisitedCell();
+//     if (cell.x() == mostVisited.x() &&
+//         cell.y() == mostVisited.y()) {
+//         statsLabel->setText(QString("Most visited: (%1, %2) = %3 times")
+//                                 .arg(cell.x()).arg(cell.y()).arg(visitCount));
+//     }
+// }
 
 void MainWindow::updateStatisticsTable() {
     if (!statsCheckBox->isChecked()) {
