@@ -95,7 +95,7 @@ private:
     // Ant state
     int antX = 0, antY = 0;
     int antDir = 0; // 0=up, 1=right, 2=down, 3=left
-    int stepCount = 0;
+    qint64 stepCount = 0;
 
     // Grid bounds
     int minX = -50, maxX = 50;

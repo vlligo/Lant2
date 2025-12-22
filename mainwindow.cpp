@@ -205,12 +205,12 @@ void MainWindow::setupUI() {
     mainLayout->addWidget(scrollArea, 1);
 
     // Statistics table - HIDDEN BY DEFAULT
-    statsTableGroup = new QGroupBox("Top 10 Most Visited Cells");
+    statsTableGroup = new QGroupBox("Top 20 Most Visited Cells");
     QVBoxLayout *tableLayout = new QVBoxLayout(statsTableGroup);
 
     statsTable = new QTableWidget();
-    statsTable->setColumnCount(3);
-    statsTable->setHorizontalHeaderLabels({"Cell (X,Y)", "Visits", "First Visit"});
+    statsTable->setColumnCount(2);
+    statsTable->setHorizontalHeaderLabels({"Cell (X,Y)", "Visits"});
     statsTable->horizontalHeader()->setStretchLastSection(true);
     statsTable->setMaximumHeight(200);
     tableLayout->addWidget(statsTable);
@@ -355,6 +355,13 @@ void MainWindow::updateRules() {
     QString expandedRules;
     QString compressedRules;
 
+    for (QChar ch : rulesText) {
+        if (ch.isLetter() && !QString("LRFB").contains(ch)) {
+            QMessageBox::warning(this, "Invalid Rules",
+                                 "Rules can only contain L, R, F, or B letters.");
+            return;
+        }
+    }
     for (int i = 0; i < rulesText.length(); ) {
         QChar currentChar;
         int count = 1;
@@ -363,6 +370,9 @@ void MainWindow::updateRules() {
             currentChar = rulesText[i];
             i++;
 
+            while (i < rulesText.length() && rulesText[i] == ' ') {
+                i++;
+            }
             QString numStr;
             while (i < rulesText.length() && rulesText[i].isDigit()) {
                 numStr += rulesText[i];
@@ -426,7 +436,7 @@ void MainWindow::updateStatisticsTable() {
         return;
     }
 
-    auto topCells = antField->getTopVisitedCells(10);
+    auto topCells = antField->getTopVisitedCells(20);
     statsTable->setRowCount(topCells.size());
 
     for (int i = 0; i < topCells.size(); ++i) {
@@ -438,7 +448,7 @@ void MainWindow::updateStatisticsTable() {
         statsTable->setItem(i, 1, new QTableWidgetItem(QString::number(visitCount)));
 
         // For now, just show the visit count
-        statsTable->setItem(i, 2, new QTableWidgetItem(QString::number(visitCount)));
+        // statsTable->setItem(i, 2, new QTableWidgetItem(QString::number(visitCount)));
     }
 }
 
@@ -630,8 +640,13 @@ void MainWindow::exportStatistics() {
                                                     "ant_statistics.csv",
                                                     "CSV Files (*.csv)");
     if (!fileName.isEmpty()) {
-        antField->exportStatisticsToCSV(fileName);
-        statusBar()->showMessage("Statistics exported to " + fileName, 3000);
+        try {
+            antField->exportStatisticsToCSV(fileName);
+            statusBar()->showMessage("Statistics exported to " + fileName, 3000);
+        } catch (const std::exception &e) {
+            QMessageBox::critical(this, "Export Error",
+                                  QString("Failed to export: %1").arg(e.what()));
+        }
     }
 }
 
