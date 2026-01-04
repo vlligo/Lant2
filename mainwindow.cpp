@@ -341,7 +341,8 @@ void MainWindow::onMouseOverCell(int x, int y) {
     if (x == INT_MAX && y == INT_MAX) {
         coordinateLabel->setText("Mouse: --");
     } else {
-        coordinateLabel->setText(QString("Mouse: (%1, %2)").arg(x).arg(y));
+        QString pattern = ((x + y) % 2 == 0) ? "Vertical" : "Horizontal";
+        coordinateLabel->setText(QString("Mouse: (%1, %2) [%3]").arg(x).arg(y).arg(pattern));
     }
 }
 

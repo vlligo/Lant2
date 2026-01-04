@@ -540,8 +540,8 @@ void AntFieldWidget::redrawBuffer() {
 QPoint AntFieldWidget::screenToField(const QPoint &screenPos) const {
     const double scaledCellSize = cellSize * zoomFactor;
     if (qFuzzyIsNull(scaledCellSize)) return QPoint(0, 0);
-    return QPoint(qRound((screenPos.x() - offsetX) / scaledCellSize),
-                  qRound((screenPos.y() - offsetY) / scaledCellSize));
+    return QPoint(qFloor((screenPos.x() - offsetX) / scaledCellSize),
+                  qFloor((screenPos.y() - offsetY) / scaledCellSize));
 }
 
 QPoint AntFieldWidget::fieldToScreen(const QPoint &fieldPos) const {
