@@ -11,6 +11,7 @@
 #include <QElapsedTimer>
 #include <QPoint>
 #include <QMap>
+#include <QTimer>  // Add this include
 
 // Forward declaration
 struct AntStatisticsSummary;
@@ -62,6 +63,7 @@ signals:
     void stepsChanged(int steps);
     void statisticsUpdated(const AntStatisticsSummary &summary);
     void cellVisited(const QPoint &cell, int visitCount);
+    void mouseOverCell(int x, int y);  // Add this line
 
 protected:
     void paintEvent(QPaintEvent *event) override;
@@ -70,6 +72,8 @@ protected:
     void mouseReleaseEvent(QMouseEvent *event) override;
     void wheelEvent(QWheelEvent *event) override;
     void resizeEvent(QResizeEvent *event) override;
+    void enterEvent(QEnterEvent *event) override;
+    void leaveEvent(QEvent *event) override;
 
 private:
     // Coordinate conversion
@@ -80,6 +84,9 @@ private:
     void redrawBuffer();
     void updateStateColors();
     QColor stateToColor(int state) const;
+
+    // Mouse position tracking
+    void updateMousePosition(const QPoint &pos);  // Add this method
 
     // Optimized statistics update
     void updateStatistics(int x, int y);
@@ -121,6 +128,10 @@ private:
     // Interaction state
     bool dragging = false;
     QPoint lastMousePos;
+
+    // Mouse tracking
+    QPoint lastMouseCellPos;
+    QTimer *mouseUpdateTimer;  // Add this line
 
     // Rendering optimization
     bool needsRedraw = true;

@@ -9,15 +9,31 @@
 #include <QDateTime>
 #include <algorithm>
 #include <QMutexLocker>
+#include <QTimer>
+#include <QCursor>  // Add this include
 
 AntFieldWidget::AntFieldWidget(QWidget *parent)
     : QWidget(parent) {
     setMinimumSize(400, 400);
     setMouseTracking(true);
     reset();
+
+    // Mouse update timer for smoother coordinate updates
+    mouseUpdateTimer = new QTimer(this);
+    mouseUpdateTimer->setInterval(50);  // Update every 50ms
+    connect(mouseUpdateTimer, &QTimer::timeout, [this]() {
+        if (underMouse()) {
+            updateMousePosition(mapFromGlobal(QCursor::pos()));
+        }
+    });
+    mouseUpdateTimer->start();
 }
 
 AntFieldWidget::~AntFieldWidget() {
+    if (mouseUpdateTimer) {
+        mouseUpdateTimer->stop();
+        delete mouseUpdateTimer;
+    }
     cells.clear();
     cellStatistics.clear();
     stateColorCache.clear();
@@ -550,6 +566,9 @@ void AntFieldWidget::mousePressEvent(QMouseEvent *event) {
 }
 
 void AntFieldWidget::mouseMoveEvent(QMouseEvent *event) {
+    // Update mouse position for coordinate display
+    updateMousePosition(event->pos());
+
     if (dragging && (event->buttons() & Qt::LeftButton)) {
         QPoint delta = event->pos() - lastMousePos;
         offsetX += delta.x();
@@ -592,7 +611,6 @@ void AntFieldWidget::resizeEvent(QResizeEvent *event) {
     needsRedraw = true;
 }
 
-
 void AntFieldWidget::centerOnPoint(int x, int y) {
     double scaledCellSize = cellSize * zoomFactor;
     offsetX = width() / 2.0 - x * scaledCellSize;
@@ -603,4 +621,27 @@ void AntFieldWidget::centerOnPoint(int x, int y) {
 
 void AntFieldWidget::centerOnPoint(const QPoint &point) {
     centerOnPoint(point.x(), point.y());
+}
+
+void AntFieldWidget::updateMousePosition(const QPoint &pos) {
+    QPoint fieldPos = screenToField(pos);
+
+    // Only emit if the cell has changed
+    if (fieldPos != lastMouseCellPos) {
+        lastMouseCellPos = fieldPos;
+        emit mouseOverCell(fieldPos.x(), fieldPos.y());
+    }
+}
+
+void AntFieldWidget::enterEvent(QEnterEvent *event) {
+    QWidget::enterEvent(event);
+    // Start tracking mouse when it enters the widget
+    updateMousePosition(event->position().toPoint());
+}
+
+void AntFieldWidget::leaveEvent(QEvent *event) {
+    QWidget::leaveEvent(event);
+    // Clear coordinates when mouse leaves
+    lastMouseCellPos = QPoint(INT_MAX, INT_MAX);
+    emit mouseOverCell(INT_MAX, INT_MAX);
 }

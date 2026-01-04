@@ -65,6 +65,15 @@ void MainWindow::setupUI() {
     QMenu *simulationMenu = menuBar()->addMenu("&Simulation");
     QAction *resetStatsAction = simulationMenu->addAction("&Reset Statistics");
 
+    // Status bar - create labels once
+    statsLabel = new QLabel();
+    coordinateLabel = new QLabel("Mouse: (0, 0)");
+
+    // Add them to status bar
+    statusBar()->addPermanentWidget(statsLabel);
+    statusBar()->addPermanentWidget(coordinateLabel);
+    statusBar()->showMessage("Ready");
+
     // Control panel
     QGroupBox *controlGroup = new QGroupBox("Controls");
     QGridLayout *controlLayout = new QGridLayout(controlGroup);
@@ -255,6 +264,11 @@ void MainWindow::setupConnections() {
         stepsLabel->setText(QString("Total steps: %1").arg(steps));
     });
 
+
+    // Connect the mouse coordinate signal
+    connect(antField, &AntFieldWidget::mouseOverCell,
+            this, &MainWindow::onMouseOverCell);
+
     // Remove the cellVisited connection since we're using timer-based updates
 
     // Buttons
@@ -321,6 +335,14 @@ void MainWindow::setupConnections() {
         }
     });
     statsTimer->start(500);  // Update every 500ms
+}
+
+void MainWindow::onMouseOverCell(int x, int y) {
+    if (x == INT_MAX && y == INT_MAX) {
+        coordinateLabel->setText("Mouse: --");
+    } else {
+        coordinateLabel->setText(QString("Mouse: (%1, %2)").arg(x).arg(y));
+    }
 }
 
 void MainWindow::updateQuickStatistics() {

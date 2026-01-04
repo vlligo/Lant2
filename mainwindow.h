@@ -43,6 +43,7 @@ private slots:
     void showCellDetails();
     void centerOnTableCell();
     void centerOnSelectedStatistic();
+    void onMouseOverCell(int x, int y);
 
 private:
     void loadPresets();
@@ -68,6 +69,8 @@ private:
     QLabel *rulesLabel;
     QGroupBox *statsTableGroup;
     QTableWidget *statsTable;
+    QLabel *coordinateLabel;
+    QLabel *mouseCoordinateLabel;
 
     int lastCustomSteps = 1000;
 };
