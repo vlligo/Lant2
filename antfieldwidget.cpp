@@ -312,12 +312,21 @@ void AntFieldWidget::setCellSize(int size) {
 }
 
 void AntFieldWidget::setZoom(double zoom) {
-    QPoint antScreenPosBefore = fieldToScreen(QPoint(antX, antY));
-    zoomFactor = qBound(0.1, zoom, 20.0);
-    QPoint antScreenPosAfter = fieldToScreen(QPoint(antX, antY));
+    // Get the current center point of the widget in field coordinates
+    QPoint centerPoint = screenToField(QPoint(width() / 2, height() / 2));
 
-    offsetX += antScreenPosBefore.x() - antScreenPosAfter.x();
-    offsetY += antScreenPosBefore.y() - antScreenPosAfter.y();
+    // Store the current screen position of this center point
+    QPoint oldCenterScreen = fieldToScreen(centerPoint);
+
+    // Set the new zoom factor
+    zoomFactor = qBound(0.1, zoom, 20.0);
+
+    // Calculate where the same field point should be on screen after zoom
+    QPoint newCenterScreen = fieldToScreen(centerPoint);
+
+    // Adjust offset to keep the same field point at the center
+    offsetX += oldCenterScreen.x() - newCenterScreen.x();
+    offsetY += oldCenterScreen.y() - newCenterScreen.y();
 
     needsRedraw = true;
     update();
