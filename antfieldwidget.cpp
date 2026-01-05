@@ -410,49 +410,68 @@ void AntFieldWidget::paintEvent(QPaintEvent *event) {
     // Draw Stats Overlay
     // Only draw text if zoomed in enough to be readable
     if (statisticsEnabled && zoomFactor > 3.0) {
-        QMutexLocker locker(&statisticsMutex);
+        if (statisticsEnabled && zoomFactor * cellSize > 15.0) {
+            QMutexLocker locker(&statisticsMutex);
 
-        // Setup font
-        QFont font = painter.font();
-        // Scale font size based on cell size/zoom
-        int fontSize = qMax(6, static_cast<int>(cellSize * zoomFactor / 3.5));
-        font.setPixelSize(fontSize);
-        painter.setFont(font);
+            QPoint topLeft = screenToField(QPoint(0, 0));
+            QPoint bottomRight = screenToField(QPoint(width(), height()));
 
-        // Calculate visible range to avoid iterating all cells
-        QPoint topLeft = screenToField(QPoint(0, 0));
-        QPoint bottomRight = screenToField(QPoint(width(), height()));
+            // Helper lambda to draw text that fits in a corner
+            auto drawCornerText = [&](const QRect &cellRect, int value, Qt::Alignment align) {
+                if (value <= 0) return;
+                QString text = QString::number(value);
 
-        // Iterate visible area
-        for (int x = topLeft.x() - 1; x <= bottomRight.x() + 1; ++x) {
-            for (int y = topLeft.y() - 1; y <= bottomRight.y() + 1; ++y) {
-                QPair<int, int> key(x, y);
-                if (!cellStatistics.contains(key)) continue;
+                // Define max dimensions (approx half the cell minus padding)
+                int maxW = cellRect.width() / 2 - 2;
+                int maxH = cellRect.height() / 2 - 2;
 
-                const CellStatistics &stats = cellStatistics[key];
-                QPoint screenPos = fieldToScreen(QPoint(x, y));
-                int size = static_cast<int>(cellSize * zoomFactor);
-                QRect cellRect(screenPos.x(), screenPos.y(), size, size);
+                if (maxW < 4 || maxH < 6) return; // Too small to draw anything readable
 
-                // Contrast color for text
-                painter.setPen(Qt::black); // Or logic to pick white/black based on cell color
+                QFont f = painter.font();
+                // Start with a max font size (e.g., 40% of cell height)
+                int pixelSize = qMin(maxH, static_cast<int>(cellRect.height() * 0.4));
 
-                // Draw 4 corners
-                // 0: Top-Left
-                if (stats.cornerCounts[0] > 0)
-                    painter.drawText(cellRect, Qt::AlignLeft | Qt::AlignTop, QString::number(stats.cornerCounts[0]));
+                // Dynamic Sizing: Shrink font until text fits
+                f.setPixelSize(pixelSize);
+                QFontMetrics fm(f);
+                while (pixelSize > 4 && (fm.horizontalAdvance(text) > maxW)) {
+                    pixelSize--;
+                    f.setPixelSize(pixelSize);
+                    fm = QFontMetrics(f);
+                }
 
-                // 1: Top-Right
-                if (stats.cornerCounts[1] > 0)
-                    painter.drawText(cellRect, Qt::AlignRight | Qt::AlignTop, QString::number(stats.cornerCounts[1]));
+                painter.setFont(f);
 
-                // 2: Bottom-Right
-                if (stats.cornerCounts[2] > 0)
-                    painter.drawText(cellRect, Qt::AlignRight | Qt::AlignBottom, QString::number(stats.cornerCounts[2]));
+                // Determine sub-rect for the corner
+                QRect cornerRect = cellRect;
+                cornerRect.setWidth(cellRect.width() / 2);
+                cornerRect.setHeight(cellRect.height() / 2);
 
-                // 3: Bottom-Left
-                if (stats.cornerCounts[3] > 0)
-                    painter.drawText(cellRect, Qt::AlignLeft | Qt::AlignBottom, QString::number(stats.cornerCounts[3]));
+                if (align & Qt::AlignRight) cornerRect.moveLeft(cellRect.center().x());
+                if (align & Qt::AlignBottom) cornerRect.moveTop(cellRect.center().y());
+
+                // Draw
+                painter.setPen(Qt::black); // You might want to invert this based on cell color
+                painter.drawText(cornerRect, Qt::AlignCenter, text);
+            };
+
+            // Iterate visible area
+            for (int x = topLeft.x() - 1; x <= bottomRight.x() + 1; ++x) {
+                for (int y = topLeft.y() - 1; y <= bottomRight.y() + 1; ++y) {
+                    QPair<int, int> key(x, y);
+                    if (!cellStatistics.contains(key)) continue;
+
+                    const CellStatistics &stats = cellStatistics[key];
+                    QPoint screenPos = fieldToScreen(QPoint(x, y));
+                    int size = static_cast<int>(cellSize * zoomFactor);
+                    QRect cellRect(screenPos.x(), screenPos.y(), size, size);
+
+                    // Draw 4 corners with auto-sizing
+                    drawCornerText(cellRect, stats.cornerCounts[0], Qt::AlignLeft | Qt::AlignTop);     // Top-Left
+                    drawCornerText(cellRect, stats.cornerCounts[1], Qt::AlignRight | Qt::AlignTop);    // Top-Right
+                    drawCornerText(cellRect, stats.cornerCounts[2], Qt::AlignRight | Qt::AlignBottom); // Bottom-Right
+                    drawCornerText(cellRect, stats.cornerCounts[3], Qt::AlignLeft | Qt::AlignBottom);  // Bottom-Left
+                }
             }
         }
     }
