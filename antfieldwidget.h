@@ -24,6 +24,11 @@ public:
         int visitCount = 0;
         int lastVisitStep = 0;
         int firstVisitStep = 0;
+        // Index 0: Top-Left (Left<->Top)
+        // Index 1: Top-Right (Top<->Right)
+        // Index 2: Bottom-Right (Right<->Bottom)
+        // Index 3: Bottom-Left (Bottom<->Left)
+        int cornerCounts[4] = {0, 0, 0, 0};
     };
 
     explicit AntFieldWidget(QWidget *parent = nullptr);
@@ -107,6 +112,7 @@ private:
     // Grid bounds
     int minX = -50, maxX = 50;
     int minY = -50, maxY = 50;
+
 
     // View state
     double offsetX = 0, offsetY = 0;

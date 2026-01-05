@@ -103,11 +103,17 @@ void AntFieldWidget::nextStep(int steps) {
     };
 
     // Batch statistics updates for performance
-    QHash<QPair<int, int>, int> batchUpdates;
+    struct BatchData {
+        int visits = 0;
+        int corners[4] = {0, 0, 0, 0};
+    };
+    QHash<QPair<int, int>, BatchData> batchUpdates;
 
     for (int s = 0; s < steps; ++s) {
         QPair<int, int> cellKey(antX, antY);
         quint8 &currentState = cells[cellKey];
+
+        int oldDir = antDir; // Direction we arrived with/are currently facing
 
         if (currentState < ruleLength) {
             QChar rule = rules.at(currentState);
@@ -117,14 +123,37 @@ void AntFieldWidget::nextStep(int steps) {
             switch (rule.unicode()) {
             case 'L': antDir = (antDir + 3) % 4; break;
             case 'R': antDir = (antDir + 1) % 4; break;
-            case 'F': antDir = (antDir + 2) % 4; break;
-            case 'B': break;
+                // Add handling for other rules (U-turn, etc.) if needed
             }
         }
 
-        // Batch statistics update for performance
+        // Calculate Corner Traversal
+        // Entry Side: The side we entered FROM.
+        // If facing Up (0), we came from Bottom (2).
+        // If facing Right (1), we came from Left (3).
+        int entrySide = (oldDir + 2) % 4;
+        int exitSide = antDir;
+
+        int cornerIndex = -1;
+        // Determine corner based on sides involved
+        // Top(0), Right(1), Bottom(2), Left(3)
+        bool hasTop = (entrySide == 0 || exitSide == 0);
+        bool hasRight = (entrySide == 1 || exitSide == 1);
+        bool hasBottom = (entrySide == 2 || exitSide == 2);
+        bool hasLeft = (entrySide == 3 || exitSide == 3);
+
+        if (hasTop && hasLeft) cornerIndex = 0;      // Top-Left
+        else if (hasTop && hasRight) cornerIndex = 1; // Top-Right
+        else if (hasBottom && hasRight) cornerIndex = 2; // Bottom-Right
+        else if (hasBottom && hasLeft) cornerIndex = 3;  // Bottom-Left
+
+        // Batch statistics update
         if (statisticsEnabled) {
-            batchUpdates[cellKey]++;
+            BatchData &data = batchUpdates[cellKey];
+            data.visits++;
+            if (cornerIndex != -1) {
+                data.corners[cornerIndex]++;
+            }
         }
 
         // Move ant
@@ -147,19 +176,23 @@ void AntFieldWidget::nextStep(int steps) {
 
         for (auto it = batchUpdates.constBegin(); it != batchUpdates.constEnd(); ++it) {
             QPair<int, int> cellKey = it.key();
-            int visitsToAdd = it.value();
+            const BatchData &data = it.value();
 
             CellStatistics &stats = cellStatistics[cellKey];
 
             // Initialize first visit
             if (stats.visitCount == 0) {
-                stats.firstVisitStep = stepCount - visitsToAdd + 1;
+                stats.firstVisitStep = stepCount - data.visits + 1; // Approx
                 uniqueCellsCount++;
             }
 
-            // Update visit count
-            stats.visitCount += visitsToAdd;
+            stats.visitCount += data.visits;
             stats.lastVisitStep = stepCount;
+
+            // Update corner stats
+            for(int i=0; i<4; i++) {
+                stats.cornerCounts[i] += data.corners[i];
+            }
 
             // Track recently visited cells for faster drawing
             recentlyVisitedCells.append(QPoint(cellKey.first, cellKey.second));
@@ -374,6 +407,55 @@ void AntFieldWidget::paintEvent(QPaintEvent *event) {
 
     QPainter painter(this);
     painter.drawPixmap(0, 0, bufferPixmap);
+    // Draw Stats Overlay
+    // Only draw text if zoomed in enough to be readable
+    if (statisticsEnabled && zoomFactor > 3.0) {
+        QMutexLocker locker(&statisticsMutex);
+
+        // Setup font
+        QFont font = painter.font();
+        // Scale font size based on cell size/zoom
+        int fontSize = qMax(6, static_cast<int>(cellSize * zoomFactor / 3.5));
+        font.setPixelSize(fontSize);
+        painter.setFont(font);
+
+        // Calculate visible range to avoid iterating all cells
+        QPoint topLeft = screenToField(QPoint(0, 0));
+        QPoint bottomRight = screenToField(QPoint(width(), height()));
+
+        // Iterate visible area
+        for (int x = topLeft.x() - 1; x <= bottomRight.x() + 1; ++x) {
+            for (int y = topLeft.y() - 1; y <= bottomRight.y() + 1; ++y) {
+                QPair<int, int> key(x, y);
+                if (!cellStatistics.contains(key)) continue;
+
+                const CellStatistics &stats = cellStatistics[key];
+                QPoint screenPos = fieldToScreen(QPoint(x, y));
+                int size = static_cast<int>(cellSize * zoomFactor);
+                QRect cellRect(screenPos.x(), screenPos.y(), size, size);
+
+                // Contrast color for text
+                painter.setPen(Qt::black); // Or logic to pick white/black based on cell color
+
+                // Draw 4 corners
+                // 0: Top-Left
+                if (stats.cornerCounts[0] > 0)
+                    painter.drawText(cellRect, Qt::AlignLeft | Qt::AlignTop, QString::number(stats.cornerCounts[0]));
+
+                // 1: Top-Right
+                if (stats.cornerCounts[1] > 0)
+                    painter.drawText(cellRect, Qt::AlignRight | Qt::AlignTop, QString::number(stats.cornerCounts[1]));
+
+                // 2: Bottom-Right
+                if (stats.cornerCounts[2] > 0)
+                    painter.drawText(cellRect, Qt::AlignRight | Qt::AlignBottom, QString::number(stats.cornerCounts[2]));
+
+                // 3: Bottom-Left
+                if (stats.cornerCounts[3] > 0)
+                    painter.drawText(cellRect, Qt::AlignLeft | Qt::AlignBottom, QString::number(stats.cornerCounts[3]));
+            }
+        }
+    }
 }
 
 void AntFieldWidget::redrawBuffer() {

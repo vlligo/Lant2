@@ -379,9 +379,9 @@ void MainWindow::updateRules() {
     QString compressedRules;
 
     for (QChar ch : rulesText) {
-        if (ch.isLetter() && !QString("LRFB").contains(ch)) {
+        if (ch.isLetter() && !QString("LR").contains(ch)) {
             QMessageBox::warning(this, "Invalid Rules",
-                                 "Rules can only contain L, R, F, or B letters.");
+                                 "Rules can only contain L or R letters.");
             return;
         }
     }
