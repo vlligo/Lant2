@@ -11,7 +11,7 @@
 #include <QElapsedTimer>
 #include <QPoint>
 #include <QMap>
-#include <QTimer>  // Add this include
+#include <QTimer>
 
 // Forward declaration
 struct AntStatisticsSummary;
@@ -22,8 +22,8 @@ class AntFieldWidget : public QWidget {
 public:
     struct CellStatistics {
         int visitCount = 0;
-        int lastVisitStep = 0;
-        int firstVisitStep = 0;
+        qint64 lastVisitStep = 0;
+        qint64 firstVisitStep = 0;
         // Index 0: Top-Left (Left<->Top)
         // Index 1: Top-Right (Top<->Right)
         // Index 2: Bottom-Right (Right<->Bottom)
@@ -68,7 +68,7 @@ signals:
     void stepsChanged(int steps);
     void statisticsUpdated(const AntStatisticsSummary &summary);
     void cellVisited(const QPoint &cell, int visitCount);
-    void mouseOverCell(int x, int y);  // Add this line
+    void mouseOverCell(int x, int y);
 
 protected:
     void paintEvent(QPaintEvent *event) override;
@@ -77,7 +77,11 @@ protected:
     void mouseReleaseEvent(QMouseEvent *event) override;
     void wheelEvent(QWheelEvent *event) override;
     void resizeEvent(QResizeEvent *event) override;
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
     void enterEvent(QEnterEvent *event) override;
+#else
+    void enterEvent(QEvent *event) override;
+#endif
     void leaveEvent(QEvent *event) override;
 
 private:
@@ -130,6 +134,13 @@ private:
     // Performance optimization: track recently visited cells for faster drawing
     QVector<QPoint> recentlyVisitedCells;
     static const int RECENT_CELLS_BUFFER_SIZE = 1000;
+
+    struct BatchData {
+        int visits = 0;
+        int corners[4] = {0, 0, 0, 0};
+        qint64 firstVisitStep = -1; // Track exact step
+        qint64 lastVisitStep = -1;  // Track exact step
+    };
 
     // Interaction state
     bool dragging = false;

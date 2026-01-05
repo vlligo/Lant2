@@ -10,7 +10,7 @@
 #include <algorithm>
 #include <QMutexLocker>
 #include <QTimer>
-#include <QCursor>  // Add this include
+#include <QCursor>
 
 AntFieldWidget::AntFieldWidget(QWidget *parent)
     : QWidget(parent) {
@@ -30,10 +30,6 @@ AntFieldWidget::AntFieldWidget(QWidget *parent)
 }
 
 AntFieldWidget::~AntFieldWidget() {
-    if (mouseUpdateTimer) {
-        mouseUpdateTimer->stop();
-        delete mouseUpdateTimer;
-    }
     cells.clear();
     cellStatistics.clear();
     stateColorCache.clear();
@@ -103,65 +99,63 @@ void AntFieldWidget::nextStep(int steps) {
     };
 
     // Batch statistics updates for performance
-    struct BatchData {
+    struct LocalBatchData {
         int visits = 0;
         int corners[4] = {0, 0, 0, 0};
+        qint64 firstVisitStep = -1;
+        qint64 lastVisitStep = -1;
     };
-    QHash<QPair<int, int>, BatchData> batchUpdates;
+    QHash<QPair<int, int>, LocalBatchData> batchUpdates;
 
     for (int s = 0; s < steps; ++s) {
         QPair<int, int> cellKey(antX, antY);
         quint8 &currentState = cells[cellKey];
+        int oldDir = antDir;
 
-        int oldDir = antDir; // Direction we arrived with/are currently facing
-
+        // Logic
         if (currentState < ruleLength) {
             QChar rule = rules.at(currentState);
             currentState = (currentState + 1) % ruleLength;
-
-            // Update direction
             switch (rule.unicode()) {
             case 'L': antDir = (antDir + 3) % 4; break;
             case 'R': antDir = (antDir + 1) % 4; break;
-                // Add handling for other rules (U-turn, etc.) if needed
             }
         }
 
-        // Calculate Corner Traversal
-        // Entry Side: The side we entered FROM.
-        // If facing Up (0), we came from Bottom (2).
-        // If facing Right (1), we came from Left (3).
+        // Corner Logic
         int entrySide = (oldDir + 2) % 4;
         int exitSide = antDir;
-
         int cornerIndex = -1;
-        // Determine corner based on sides involved
-        // Top(0), Right(1), Bottom(2), Left(3)
+
         bool hasTop = (entrySide == 0 || exitSide == 0);
         bool hasRight = (entrySide == 1 || exitSide == 1);
         bool hasBottom = (entrySide == 2 || exitSide == 2);
         bool hasLeft = (entrySide == 3 || exitSide == 3);
 
-        if (hasTop && hasLeft) cornerIndex = 0;      // Top-Left
-        else if (hasTop && hasRight) cornerIndex = 1; // Top-Right
-        else if (hasBottom && hasRight) cornerIndex = 2; // Bottom-Right
-        else if (hasBottom && hasLeft) cornerIndex = 3;  // Bottom-Left
+        if (hasTop && hasLeft) cornerIndex = 0;
+        else if (hasTop && hasRight) cornerIndex = 1;
+        else if (hasBottom && hasRight) cornerIndex = 2;
+        else if (hasBottom && hasLeft) cornerIndex = 3;
 
-        // Batch statistics update
+        qint64 currentStepVal = stepCount + 1;
+
         if (statisticsEnabled) {
-            BatchData &data = batchUpdates[cellKey];
+            LocalBatchData &data = batchUpdates[cellKey];
             data.visits++;
+            if (data.firstVisitStep == -1) {
+                data.firstVisitStep = currentStepVal;
+            }
+            data.lastVisitStep = currentStepVal; // Always update last visit to current
+
             if (cornerIndex != -1) {
                 data.corners[cornerIndex]++;
             }
         }
 
-        // Move ant
         const QPoint &dir = directions[antDir];
         antX += dir.x();
         antY += dir.y();
 
-        // Expand bounds (do this less frequently for performance)
         if (antX < minX) minX = antX;
         if (antX > maxX) maxX = antX;
         if (antY < minY) minY = antY;
@@ -176,35 +170,37 @@ void AntFieldWidget::nextStep(int steps) {
 
         for (auto it = batchUpdates.constBegin(); it != batchUpdates.constEnd(); ++it) {
             QPair<int, int> cellKey = it.key();
-            const BatchData &data = it.value();
-
+            const LocalBatchData &data = it.value();
             CellStatistics &stats = cellStatistics[cellKey];
 
-            // Initialize first visit
             if (stats.visitCount == 0) {
-                stats.firstVisitStep = stepCount - data.visits + 1; // Approx
+                stats.firstVisitStep = data.firstVisitStep;
                 uniqueCellsCount++;
             }
 
             stats.visitCount += data.visits;
-            stats.lastVisitStep = stepCount;
+            stats.lastVisitStep = data.lastVisitStep;
 
-            // Update corner stats
             for(int i=0; i<4; i++) {
                 stats.cornerCounts[i] += data.corners[i];
             }
 
-            // Track recently visited cells for faster drawing
-            recentlyVisitedCells.append(QPoint(cellKey.first, cellKey.second));
-            if (recentlyVisitedCells.size() > RECENT_CELLS_BUFFER_SIZE) {
-                recentlyVisitedCells.remove(0, recentlyVisitedCells.size() - RECENT_CELLS_BUFFER_SIZE);
-            }
-
-            // Update max visits if needed
             if (stats.visitCount > maxVisits) {
                 maxVisits = stats.visitCount;
                 mostVisitedCell = QPoint(cellKey.first, cellKey.second);
             }
+
+            // Collect for recent cells (do not remove here to avoid O(N^2))
+            recentlyVisitedCells.append(QPoint(cellKey.first, cellKey.second));
+        }
+
+        // FIX: Optimize cleaning of recentlyVisitedCells
+        if (recentlyVisitedCells.size() > RECENT_CELLS_BUFFER_SIZE) {
+            // Keep only the last RECENT_CELLS_BUFFER_SIZE elements
+            // This is still O(N) but called once per batch, not per cell
+            recentlyVisitedCells = recentlyVisitedCells.mid(
+                recentlyVisitedCells.size() - RECENT_CELLS_BUFFER_SIZE
+                );
         }
     }
 
