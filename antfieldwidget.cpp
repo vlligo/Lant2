@@ -688,22 +688,30 @@ void AntFieldWidget::mouseReleaseEvent(QMouseEvent *event) {
 }
 
 void AntFieldWidget::wheelEvent(QWheelEvent *event) {
-    const double zoomChange = 1.1;
-    const QPointF mousePos = event->position();
-    const QPointF fieldPos = screenToField(mousePos.toPoint());
+    const double zoomStep = 1.2;
+    double oldZoom = zoomFactor;
+    double newZoom = zoomFactor;
 
     if (event->angleDelta().y() > 0) {
-        zoomFactor = qMin(20.0, zoomFactor * zoomChange);
+        newZoom *= zoomStep;
     } else {
-        zoomFactor = qMax(0.1, zoomFactor / zoomChange);
+        newZoom /= zoomStep;
     }
 
-    const QPointF newMousePos = fieldToScreen(fieldPos.toPoint());
-    offsetX += mousePos.x() - newMousePos.x();
-    offsetY += mousePos.y() - newMousePos.y();
+    if (newZoom < 0.1 || newZoom > 50.0) return;
+
+    QPoint mousePos = event->position().toPoint();
+
+    double zoomRatio = newZoom / oldZoom;
+
+    offsetX = mousePos.x() - (mousePos.x() - offsetX) * zoomRatio;
+    offsetY = mousePos.y() - (mousePos.y() - offsetY) * zoomRatio;
+
+    zoomFactor = newZoom;
 
     needsRedraw = true;
     update();
+
     emit zoomChanged(zoomFactor);
 }
 
