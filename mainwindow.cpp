@@ -23,6 +23,7 @@
 #include <QMenuBar>
 #include <QAction>
 #include <QTimer>
+#include <utility>
 
 MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
     loadPresets();
