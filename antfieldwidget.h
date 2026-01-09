@@ -20,6 +20,13 @@ class AntFieldWidget : public QWidget {
     Q_OBJECT
 
 public:
+    enum DisplayStyle {
+        JustColors,
+        Visits,
+        Rotations
+    };
+    Q_ENUM(DisplayStyle)
+
     struct CellStatistics {
         int visitCount = 0;
         qint64 lastVisitStep = 0;
@@ -62,6 +69,9 @@ public:
     // Performance optimized methods
     QVector<QPoint> getRecentlyVisitedCells() const { return recentlyVisitedCells; }
 
+public slots:
+    void setDisplayStyle(DisplayStyle style);
+
 signals:
     void antMoved(int x, int y, int direction, int steps);
     void zoomChanged(double zoom);
@@ -93,6 +103,9 @@ private:
     void redrawBuffer();
     void updateStateColors();
     QColor stateToColor(int state) const;
+    QColor visitsToColor(int visitCount) const;
+    QColor rotationsToColor(const CellStatistics& stats) const;
+
 
     // Mouse position tracking
     void updateMousePosition(const QPoint &pos);  // Add this method
@@ -156,6 +169,9 @@ private:
 
     // Rules
     QString rules;
+
+    // Display style
+    DisplayStyle currentStyle = JustColors;
 };
 
 inline uint qHash(const QPair<int, int> &key, uint seed = 0) {

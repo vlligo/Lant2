@@ -4,6 +4,7 @@
 #include <QMainWindow>
 #include <QHash>
 #include <QPoint>
+#include "antfieldwidget.h"
 
 // Forward declarations
 class AntFieldWidget;
@@ -44,6 +45,7 @@ private slots:
     void centerOnTableCell();
     void centerOnSelectedStatistic();
     void onMouseOverCell(int x, int y);
+    void changeStyle();
 
 private:
     void loadPresets();
@@ -58,6 +60,7 @@ private:
     QLineEdit *rulesEdit;
     QSpinBox *quickStepsSpin;
     QPushButton *quickStepsButton;
+    QPushButton *styleButton;
     QCheckBox *statsCheckBox;
     QLabel *zoomLabel;
     QLabel *stepsLabel;
@@ -73,6 +76,7 @@ private:
     QLabel *mouseCoordinateLabel;
 
     int lastCustomSteps = 1000;
+    int currentStyleIndex = 0;
 };
 
 #endif // MAINWINDOW_H

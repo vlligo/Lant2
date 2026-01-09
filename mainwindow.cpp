@@ -1,31 +1,32 @@
 #include "mainwindow.h"
-#include "antfieldwidget.h"
 
+#include <QAction>
 #include <QApplication>
-#include <QHBoxLayout>
-#include <QVBoxLayout>
-#include <QGridLayout>
-#include <QPushButton>
-#include <QLabel>
-#include <QSpinBox>
-#include <QComboBox>
-#include <QGroupBox>
-#include <QStatusBar>
-#include <QInputDialog>
-#include <QScrollArea>
-#include <QLineEdit>
 #include <QCheckBox>
-#include <QTableWidget>
-#include <QHeaderView>
+#include <QComboBox>
 #include <QFileDialog>
-#include <QMessageBox>
+#include <QGridLayout>
+#include <QGroupBox>
+#include <QHBoxLayout>
+#include <QHeaderView>
+#include <QInputDialog>
+#include <QLabel>
+#include <QLineEdit>
 #include <QMenu>
 #include <QMenuBar>
-#include <QAction>
+#include <QMessageBox>
+#include <QPushButton>
+#include <QScrollArea>
+#include <QSpinBox>
+#include <QStatusBar>
+#include <QTableWidget>
 #include <QTimer>
+#include <QVBoxLayout>
 #include <utility>
 
-MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
+#include "antfieldwidget.h"
+
+MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     loadPresets();
     setupUI();
     setupConnections();
@@ -39,32 +40,32 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
 
 void MainWindow::loadPresets() {
     presets = {
-               {0, "LR"},
-               {1, "LLRR"},
-               {2, "LLRRRLRLRLLR"},
-               {3, "LRRRRRLLR"},
-               };
+        {0, "LR"},
+        {1, "LLRR"},
+        {2, "LLRRRLRLRLLR"},
+        {3, "LRRRRRLLR"},
+    };
 }
 
 void MainWindow::setupUI() {
-    QWidget *centralWidget = new QWidget(this);
+    QWidget* centralWidget = new QWidget(this);
     setCentralWidget(centralWidget);
 
-    QVBoxLayout *mainLayout = new QVBoxLayout(centralWidget);
+    QVBoxLayout* mainLayout = new QVBoxLayout(centralWidget);
 
     // Create menu bar
-    QMenu *fileMenu = menuBar()->addMenu("&File");
-    QAction *exportAction = fileMenu->addAction("&Export Statistics...");
+    QMenu* fileMenu = menuBar()->addMenu("&File");
+    QAction* exportAction = fileMenu->addAction("&Export Statistics...");
     fileMenu->addSeparator();
-    QAction *exitAction = fileMenu->addAction("E&xit");
+    QAction* exitAction = fileMenu->addAction("E&xit");
 
-    QMenu *viewMenu = menuBar()->addMenu("&View");
-    QAction *statsAction = viewMenu->addAction("&Show Statistics Panel");
+    QMenu* viewMenu = menuBar()->addMenu("&View");
+    QAction* statsAction = viewMenu->addAction("&Show Statistics Panel");
     statsAction->setCheckable(true);
     statsAction->setChecked(false);  // Hidden by default
 
-    QMenu *simulationMenu = menuBar()->addMenu("&Simulation");
-    QAction *resetStatsAction = simulationMenu->addAction("&Reset Statistics");
+    QMenu* simulationMenu = menuBar()->addMenu("&Simulation");
+    QAction* resetStatsAction = simulationMenu->addAction("&Reset Statistics");
 
     // Status bar - create labels once
     statsLabel = new QLabel();
@@ -76,8 +77,8 @@ void MainWindow::setupUI() {
     statusBar()->showMessage("Ready");
 
     // Control panel
-    QGroupBox *controlGroup = new QGroupBox("Controls");
-    QGridLayout *controlLayout = new QGridLayout(controlGroup);
+    QGroupBox* controlGroup = new QGroupBox("Controls");
+    QGridLayout* controlLayout = new QGridLayout(controlGroup);
 
     int row = 0;
 
@@ -86,11 +87,12 @@ void MainWindow::setupUI() {
     rulesEdit = new QLineEdit();
     controlLayout->addWidget(rulesEdit, row, 1);
 
-    QPushButton *rulesButton = new QPushButton("Update Rules");
+    QPushButton* rulesButton = new QPushButton("Update Rules");
     controlLayout->addWidget(rulesButton, row, 2);
 
-    QComboBox *presetCombo = new QComboBox();
-    presetCombo->addItems({"Classic LR", "Symmetric LLRR", "Highway", "Complex"});
+    QComboBox* presetCombo = new QComboBox();
+    presetCombo->addItems(
+        {"Classic LR", "Symmetric LLRR", "Highway", "Complex"});
     controlLayout->addWidget(presetCombo, row, 3);
 
     rulesLabel = new QLabel("Rules: LR");
@@ -99,7 +101,7 @@ void MainWindow::setupUI() {
     row++;
 
     // Step controls
-    QPushButton *stepButton = new QPushButton("Step (1)");
+    QPushButton* stepButton = new QPushButton("Step (1)");
     controlLayout->addWidget(stepButton, row, 0);
 
     quickStepsSpin = new QSpinBox();
@@ -112,7 +114,7 @@ void MainWindow::setupUI() {
     quickStepsButton = new QPushButton("Run");
     controlLayout->addWidget(quickStepsButton, row, 2);
 
-    QPushButton *resetButton = new QPushButton("Reset");
+    QPushButton* resetButton = new QPushButton("Reset");
     controlLayout->addWidget(resetButton, row, 3);
 
     statsCheckBox = new QCheckBox("Track Statistics");
@@ -122,56 +124,58 @@ void MainWindow::setupUI() {
     row++;
 
     // View controls
-    QPushButton *centerButton = new QPushButton("Center on Ant");
+    QPushButton* centerButton = new QPushButton("Center on Ant");
     controlLayout->addWidget(centerButton, row, 0);
 
-    QPushButton *zoomOutButton = new QPushButton("Zoom Out");
+    QPushButton* zoomOutButton = new QPushButton("Zoom Out");
     controlLayout->addWidget(zoomOutButton, row, 1);
 
-    QPushButton *zoomInButton = new QPushButton("Zoom In");
+    QPushButton* zoomInButton = new QPushButton("Zoom In");
     controlLayout->addWidget(zoomInButton, row, 2);
 
     zoomLabel = new QLabel("Zoom: 1.0x");
     controlLayout->addWidget(zoomLabel, row, 3);
 
-    QPushButton *cellSizeButton = new QPushButton("Cell Size...");
+    QPushButton* cellSizeButton = new QPushButton("Cell Size...");
     controlLayout->addWidget(cellSizeButton, row, 4);
 
-    QPushButton *togglePanelButton = new QPushButton("Show Statistics Panel");
+    QPushButton* togglePanelButton = new QPushButton("Show Statistics Panel");
     controlLayout->addWidget(togglePanelButton, row, 5);
 
     // New centering buttons
-    QPushButton *centerMostVisitedButton = new QPushButton("Center Most Visited");
+    QPushButton* centerMostVisitedButton =
+        new QPushButton("Center Most Visited");
     controlLayout->addWidget(centerMostVisitedButton, row, 6);
 
-    QPushButton *centerCoordinatesButton = new QPushButton("Center Coordinates...");
+    QPushButton* centerCoordinatesButton =
+        new QPushButton("Center Coordinates...");
     controlLayout->addWidget(centerCoordinatesButton, row, 7);
 
     row++;
 
     // Navigation buttons
-    QPushButton *leftButton = new QPushButton("←");
+    QPushButton* leftButton = new QPushButton("←");
     leftButton->setFixedSize(40, 30);
     controlLayout->addWidget(leftButton, row, 0);
 
-    QPushButton *upButton = new QPushButton("↑");
+    QPushButton* upButton = new QPushButton("↑");
     upButton->setFixedSize(40, 30);
     controlLayout->addWidget(upButton, row, 1);
 
-    QPushButton *downButton = new QPushButton("↓");
+    QPushButton* downButton = new QPushButton("↓");
     downButton->setFixedSize(40, 30);
     controlLayout->addWidget(downButton, row, 2);
 
-    QPushButton *rightButton = new QPushButton("→");
+    QPushButton* rightButton = new QPushButton("→");
     rightButton->setFixedSize(40, 30);
     controlLayout->addWidget(rightButton, row, 3);
 
     // Add a button to center on selected table cell
-    QPushButton *centerTableButton = new QPushButton("Center Selected");
+    QPushButton* centerTableButton = new QPushButton("Center Selected");
     controlLayout->addWidget(centerTableButton, row, 4);
 
     // Add a button to show statistics centering menu
-    QPushButton *centerStatsButton = new QPushButton("Center Stats...");
+    QPushButton* centerStatsButton = new QPushButton("Center Stats...");
     controlLayout->addWidget(centerStatsButton, row, 5);
 
     stepsLabel = new QLabel("Total steps: 0");
@@ -180,8 +184,8 @@ void MainWindow::setupUI() {
     row++;
 
     // Statistics quick view
-    QGroupBox *statsGroup = new QGroupBox("Quick Statistics");
-    QGridLayout *statsLayout = new QGridLayout(statsGroup);
+    QGroupBox* statsGroup = new QGroupBox("Quick Statistics");
+    QGridLayout* statsLayout = new QGridLayout(statsGroup);
 
     uniqueCellsLabel = new QLabel("Unique cells: 0");
     mostVisitedLabel = new QLabel("Most visited: (0,0)");
@@ -194,18 +198,22 @@ void MainWindow::setupUI() {
     statsLayout->addWidget(averageVisitsLabel, 0, 3);
 
     // Add button to show cell details
-    QPushButton *cellDetailsButton = new QPushButton("Show Cell Details");
+    QPushButton* cellDetailsButton = new QPushButton("Show Cell Details");
     statsLayout->addWidget(cellDetailsButton, 0, 4);
 
     // Add button to show detailed statistics dialog
-    QPushButton *statsDialogButton = new QPushButton("Detailed Statistics");
+    QPushButton* statsDialogButton = new QPushButton("Detailed Statistics");
     statsLayout->addWidget(statsDialogButton, 0, 5);
 
     controlLayout->addWidget(statsGroup, row, 0, 1, 6);
 
+    // Style button
+    styleButton = new QPushButton("Next Style");
+    controlLayout->addWidget(styleButton, row, 7);
+
     // Ant field
     antField = new AntFieldWidget();
-    QScrollArea *scrollArea = new QScrollArea();
+    QScrollArea* scrollArea = new QScrollArea();
     scrollArea->setWidget(antField);
     scrollArea->setWidgetResizable(true);
     scrollArea->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
@@ -216,7 +224,7 @@ void MainWindow::setupUI() {
 
     // Statistics table - HIDDEN BY DEFAULT
     statsTableGroup = new QGroupBox("Top 20 Most Visited Cells");
-    QVBoxLayout *tableLayout = new QVBoxLayout(statsTableGroup);
+    QVBoxLayout* tableLayout = new QVBoxLayout(statsTableGroup);
 
     statsTable = new QTableWidget();
     statsTable->setColumnCount(2);
@@ -236,11 +244,13 @@ void MainWindow::setupUI() {
     statusBar()->showMessage("Ready");
 
     // Connect menu actions
-    connect(exportAction, &QAction::triggered, this, &MainWindow::exportStatistics);
+    connect(exportAction, &QAction::triggered, this,
+            &MainWindow::exportStatistics);
     connect(statsAction, &QAction::triggered, [this, togglePanelButton]() {
         bool visible = !statsTableGroup->isVisible();
         statsTableGroup->setVisible(visible);
-        togglePanelButton->setText(visible ? "Hide Statistics Panel" : "Show Statistics Panel");
+        togglePanelButton->setText(visible ? "Hide Statistics Panel"
+                                           : "Show Statistics Panel");
     });
     connect(resetStatsAction, &QAction::triggered, [this]() {
         antField->resetStatistics();
@@ -248,33 +258,37 @@ void MainWindow::setupUI() {
         updateStatisticsTable();
     });
     connect(exitAction, &QAction::triggered, this, &QMainWindow::close);
-    connect(cellDetailsButton, &QPushButton::clicked, this, &MainWindow::showCellDetails);
-    connect(statsDialogButton, &QPushButton::clicked, this, &MainWindow::showStatistics);
-    connect(togglePanelButton, &QPushButton::clicked, [this, togglePanelButton]() {
-        bool visible = !statsTableGroup->isVisible();
-        statsTableGroup->setVisible(visible);
-        togglePanelButton->setText(visible ? "Hide Statistics Panel" : "Show Statistics Panel");
-    });
+    connect(cellDetailsButton, &QPushButton::clicked, this,
+            &MainWindow::showCellDetails);
+    connect(statsDialogButton, &QPushButton::clicked, this,
+            &MainWindow::showStatistics);
+    connect(togglePanelButton, &QPushButton::clicked,
+            [this, togglePanelButton]() {
+                bool visible = !statsTableGroup->isVisible();
+                statsTableGroup->setVisible(visible);
+                togglePanelButton->setText(visible ? "Hide Statistics Panel"
+                                                   : "Show Statistics Panel");
+            });
 }
 
 void MainWindow::setupConnections() {
     // Ant field signals
     connect(antField, &AntFieldWidget::antMoved, this, &MainWindow::onAntMoved);
-    connect(antField, &AntFieldWidget::zoomChanged, this, &MainWindow::onZoomChanged);
+    connect(antField, &AntFieldWidget::zoomChanged, this,
+            &MainWindow::onZoomChanged);
     connect(antField, &AntFieldWidget::stepsChanged, this, [this](int steps) {
         stepsLabel->setText(QString("Total steps: %1").arg(steps));
     });
 
-
     // Connect the mouse coordinate signal
-    connect(antField, &AntFieldWidget::mouseOverCell,
-            this, &MainWindow::onMouseOverCell);
+    connect(antField, &AntFieldWidget::mouseOverCell, this,
+            &MainWindow::onMouseOverCell);
 
     // Remove the cellVisited connection since we're using timer-based updates
 
     // Buttons
     QList<QPushButton*> buttons = findChildren<QPushButton*>();
-    for (QPushButton *btn : buttons) {
+    for (QPushButton* btn : buttons) {
         const QString text = btn->text();
 
         if (text == "Update Rules") {
@@ -282,51 +296,67 @@ void MainWindow::setupConnections() {
         } else if (text == "Step (1)") {
             connect(btn, &QPushButton::clicked, this, &MainWindow::takeStep);
         } else if (text == "Run") {
-            connect(btn, &QPushButton::clicked, this, &MainWindow::onQuickStepsClicked);
+            connect(btn, &QPushButton::clicked, this,
+                    &MainWindow::onQuickStepsClicked);
         } else if (text == "Reset") {
-            connect(btn, &QPushButton::clicked, this, &MainWindow::resetSimulation);
+            connect(btn, &QPushButton::clicked, this,
+                    &MainWindow::resetSimulation);
         } else if (text == "Center on Ant") {
             connect(btn, &QPushButton::clicked, this, &MainWindow::centerView);
         } else if (text == "Center Most Visited") {
-            connect(btn, &QPushButton::clicked, this, &MainWindow::centerOnMostVisited);
+            connect(btn, &QPushButton::clicked, this,
+                    &MainWindow::centerOnMostVisited);
         } else if (text == "Center Coordinates...") {
-            connect(btn, &QPushButton::clicked, this, &MainWindow::centerOnCoordinates);
+            connect(btn, &QPushButton::clicked, this,
+                    &MainWindow::centerOnCoordinates);
         } else if (text == "Center Selected") {
-            connect(btn, &QPushButton::clicked, this, &MainWindow::centerOnTableCell);
+            connect(btn, &QPushButton::clicked, this,
+                    &MainWindow::centerOnTableCell);
         } else if (text == "Center Stats...") {
-            connect(btn, &QPushButton::clicked, this, &MainWindow::centerOnSelectedStatistic);
+            connect(btn, &QPushButton::clicked, this,
+                    &MainWindow::centerOnSelectedStatistic);
         } else if (text == "Zoom In") {
             connect(btn, &QPushButton::clicked, this, &MainWindow::zoomIn);
         } else if (text == "Zoom Out") {
             connect(btn, &QPushButton::clicked, this, &MainWindow::zoomOut);
         } else if (text == "Cell Size...") {
-            connect(btn, &QPushButton::clicked, this, &MainWindow::changeCellSize);
+            connect(btn, &QPushButton::clicked, this,
+                    &MainWindow::changeCellSize);
         } else if (text == "←") {
-            connect(btn, &QPushButton::clicked, this, [this]() { moveView(50, 0); });
+            connect(btn, &QPushButton::clicked, this,
+                    [this]() { moveView(50, 0); });
         } else if (text == "→") {
-            connect(btn, &QPushButton::clicked, this, [this]() { moveView(-50, 0); });
+            connect(btn, &QPushButton::clicked, this,
+                    [this]() { moveView(-50, 0); });
         } else if (text == "↑") {
-            connect(btn, &QPushButton::clicked, this, [this]() { moveView(0, 50); });
+            connect(btn, &QPushButton::clicked, this,
+                    [this]() { moveView(0, 50); });
         } else if (text == "↓") {
-            connect(btn, &QPushButton::clicked, this, [this]() { moveView(0, -50); });
+            connect(btn, &QPushButton::clicked, this,
+                    [this]() { moveView(0, -50); });
         }
     }
 
+    // Style button
+    connect(styleButton, &QPushButton::clicked, this, &MainWindow::changeStyle);
+
     // Preset combo
-    QComboBox *presetCombo = findChild<QComboBox*>();
+    QComboBox* presetCombo = findChild<QComboBox*>();
     if (presetCombo) {
-        connect(presetCombo, QOverload<int>::of(&QComboBox::activated),
-                this, &MainWindow::loadPreset);
+        connect(presetCombo, QOverload<int>::of(&QComboBox::activated), this,
+                &MainWindow::loadPreset);
     }
 
     // Rules edit
-    connect(rulesEdit, &QLineEdit::returnPressed, this, &MainWindow::updateRules);
+    connect(rulesEdit, &QLineEdit::returnPressed, this,
+            &MainWindow::updateRules);
 
     // Statistics checkbox
-    connect(statsCheckBox, &QCheckBox::toggled, this, &MainWindow::toggleStatistics);
+    connect(statsCheckBox, &QCheckBox::toggled, this,
+            &MainWindow::toggleStatistics);
 
     // Update statistics periodically
-    QTimer *statsTimer = new QTimer(this);
+    QTimer* statsTimer = new QTimer(this);
     connect(statsTimer, &QTimer::timeout, this, [this]() {
         if (statsCheckBox->isChecked()) {
             updateQuickStatistics();  // Always update quick stats when enabled
@@ -338,12 +368,19 @@ void MainWindow::setupConnections() {
     statsTimer->start(500);  // Update every 500ms
 }
 
+void MainWindow::changeStyle() {
+    currentStyleIndex = (currentStyleIndex + 1) % 3;
+    auto newStyle = static_cast<AntFieldWidget::DisplayStyle>(currentStyleIndex);
+    antField->setDisplayStyle(newStyle);
+}
+
 void MainWindow::onMouseOverCell(int x, int y) {
     if (x == INT_MAX && y == INT_MAX) {
         coordinateLabel->setText("Mouse: --");
     } else {
         QString pattern = ((x + y) % 2 == 0) ? "Vertical" : "Horizontal";
-        coordinateLabel->setText(QString("Mouse: (%1, %2) [%3]").arg(x).arg(y).arg(pattern));
+        coordinateLabel->setText(
+            QString("Mouse: (%1, %2) [%3]").arg(x).arg(y).arg(pattern));
     }
 }
 
@@ -358,12 +395,15 @@ void MainWindow::updateQuickStatistics() {
     }
 
     auto summary = antField->getStatisticsSummary();
-    uniqueCellsLabel->setText(QString("Unique cells: %1").arg(summary.uniqueCellsVisited));
+    uniqueCellsLabel->setText(
+        QString("Unique cells: %1").arg(summary.uniqueCellsVisited));
     mostVisitedLabel->setText(QString("Most visited: (%1, %2)")
                                   .arg(summary.mostVisitedCell.x())
                                   .arg(summary.mostVisitedCell.y()));
-    maxVisitsLabel->setText(QString("Max visits: %1").arg(summary.maxVisitsPerCell));
-    averageVisitsLabel->setText(QString("Average: %1").arg(summary.averageVisits, 0, 'f', 2));
+    maxVisitsLabel->setText(
+        QString("Max visits: %1").arg(summary.maxVisitsPerCell));
+    averageVisitsLabel->setText(
+        QString("Average: %1").arg(summary.averageVisits, 0, 'f', 2));
 
     // Update status bar with most visited cell info
     if (summary.maxVisitsPerCell > 0) {
@@ -386,7 +426,7 @@ void MainWindow::updateRules() {
             return;
         }
     }
-    for (int i = 0; i < rulesText.length(); ) {
+    for (int i = 0; i < rulesText.length();) {
         QChar currentChar;
         int count = 1;
 
@@ -437,10 +477,14 @@ void MainWindow::updateRules() {
 
 void MainWindow::onAntMoved(int x, int y, int direction, int steps) {
     static const QString dirSymbols[] = {"↑", "→", "↓", "←"};
-    QString dirStr = (direction >= 0 && direction < 4) ? dirSymbols[direction] : "?";
+    QString dirStr =
+        (direction >= 0 && direction < 4) ? dirSymbols[direction] : "?";
 
     statusBar()->showMessage(QString("Ant: (%1, %2) %3 | Steps: %4")
-                                 .arg(x).arg(y).arg(dirStr).arg(steps));
+                                 .arg(x)
+                                 .arg(y)
+                                 .arg(dirStr)
+                                 .arg(steps));
 }
 
 // void MainWindow::onCellVisited(const QPoint &cell, int visitCount) {
@@ -464,15 +508,19 @@ void MainWindow::updateStatisticsTable() {
     statsTable->setRowCount(topCells.size());
 
     for (int i = 0; i < topCells.size(); ++i) {
-        const auto &cell = topCells[i];
+        const auto& cell = topCells[i];
         int visitCount = cell.second;
 
-        statsTable->setItem(i, 0, new QTableWidgetItem(
-                                      QString("(%1, %2)").arg(cell.first.x()).arg(cell.first.y())));
-        statsTable->setItem(i, 1, new QTableWidgetItem(QString::number(visitCount)));
+        statsTable->setItem(
+            i, 0,
+            new QTableWidgetItem(
+                QString("(%1, %2)").arg(cell.first.x()).arg(cell.first.y())));
+        statsTable->setItem(i, 1,
+                            new QTableWidgetItem(QString::number(visitCount)));
 
         // For now, just show the visit count
-        // statsTable->setItem(i, 2, new QTableWidgetItem(QString::number(visitCount)));
+        // statsTable->setItem(i, 2, new
+        // QTableWidgetItem(QString::number(visitCount)));
     }
 }
 
@@ -505,9 +553,9 @@ void MainWindow::centerOnMostVisited() {
 
 void MainWindow::centerOnCoordinates() {
     bool ok;
-    QString text = QInputDialog::getText(this, "Center on Coordinates",
-                                         "Enter coordinates to center on (x,y):",
-                                         QLineEdit::Normal, "0,0", &ok);
+    QString text = QInputDialog::getText(
+        this, "Center on Coordinates",
+        "Enter coordinates to center on (x,y):", QLineEdit::Normal, "0,0", &ok);
     if (ok && !text.isEmpty()) {
         QStringList coords = text.split(',');
         if (coords.size() == 2) {
@@ -517,8 +565,9 @@ void MainWindow::centerOnCoordinates() {
             if (xOk && yOk) {
                 antField->centerOnPoint(x, y);
             } else {
-                QMessageBox::warning(this, "Invalid Input",
-                                     "Please enter valid integers for coordinates.");
+                QMessageBox::warning(
+                    this, "Invalid Input",
+                    "Please enter valid integers for coordinates.");
             }
         } else {
             QMessageBox::warning(this, "Invalid Format",
@@ -530,11 +579,11 @@ void MainWindow::centerOnCoordinates() {
 void MainWindow::centerOnTableCell() {
     int row = statsTable->currentRow();
     if (row >= 0) {
-        QTableWidgetItem *item = statsTable->item(row, 0);
+        QTableWidgetItem* item = statsTable->item(row, 0);
         if (item) {
             QString text = item->text();
             // Extract coordinates from format like "(x, y)"
-            text = text.mid(1, text.length() - 2); // Remove parentheses
+            text = text.mid(1, text.length() - 2);  // Remove parentheses
             QStringList coords = text.split(',');
             if (coords.size() == 2) {
                 bool xOk, yOk;
@@ -546,14 +595,15 @@ void MainWindow::centerOnTableCell() {
             }
         }
     } else {
-        QMessageBox::information(this, "No Selection",
-                                 "Please select a cell from the statistics table first.");
+        QMessageBox::information(
+            this, "No Selection",
+            "Please select a cell from the statistics table first.");
     }
 }
 
 void MainWindow::centerOnSelectedStatistic() {
-    // Get the currently selected statistic (most visited, second most visited, etc.)
-    // We'll create a menu to choose which statistic to center on
+    // Get the currently selected statistic (most visited, second most visited,
+    // etc.) We'll create a menu to choose which statistic to center on
     QMenu menu(this);
 
     // Get top 5 visited cells
@@ -566,17 +616,17 @@ void MainWindow::centerOnSelectedStatistic() {
     }
 
     for (int i = 0; i < topCells.size(); ++i) {
-        const auto &cell = topCells[i];
+        const auto& cell = topCells[i];
         QString text = QString("%1. (%2, %3) - %4 visits")
                            .arg(i + 1)
                            .arg(cell.first.x())
                            .arg(cell.first.y())
                            .arg(cell.second);
-        QAction *action = menu.addAction(text);
+        QAction* action = menu.addAction(text);
         action->setData(QVariant::fromValue(cell.first));
     }
 
-    QAction *selected = menu.exec(QCursor::pos());
+    QAction* selected = menu.exec(QCursor::pos());
     if (selected) {
         QPoint point = selected->data().value<QPoint>();
         antField->centerOnPoint(point);
@@ -603,8 +653,8 @@ void MainWindow::changeCellSize() {
     bool ok;
     int currentSize = antField->getCellSize();
     int size = QInputDialog::getInt(this, "Cell Size",
-                                    "Enter cell size (pixels):",
-                                    currentSize, 1, 50, 1, &ok);
+                                    "Enter cell size (pixels):", currentSize, 1,
+                                    50, 1, &ok);
     if (ok) {
         antField->setCellSize(size);
     }
@@ -625,17 +675,20 @@ void MainWindow::showStatistics() {
     statsText += QString("Simulation Statistics\n");
     statsText += QString("====================\n");
     statsText += QString("Total Steps: %1\n").arg(summary.totalCellsVisited);
-    statsText += QString("Unique Cells Visited: %1\n").arg(summary.uniqueCellsVisited);
+    statsText +=
+        QString("Unique Cells Visited: %1\n").arg(summary.uniqueCellsVisited);
     statsText += QString("Most Visited Cell: (%1, %2) [%3 times]\n")
                      .arg(summary.mostVisitedCell.x())
                      .arg(summary.mostVisitedCell.y())
                      .arg(summary.maxVisitsPerCell);
-    statsText += QString("Average Visits per Cell: %1\n").arg(summary.averageVisits, 0, 'f', 2);
-    statsText += QString("Simulation Time: %1 ms\n").arg(summary.simulationTimeMs);
+    statsText += QString("Average Visits per Cell: %1\n")
+                     .arg(summary.averageVisits, 0, 'f', 2);
+    statsText +=
+        QString("Simulation Time: %1 ms\n").arg(summary.simulationTimeMs);
     statsText += QString("\nTop 20 Most Visited Cells:\n");
 
     for (int i = 0; i < topCells.size(); ++i) {
-        const auto &cell = topCells[i];
+        const auto& cell = topCells[i];
         statsText += QString("%1. (%2, %3): %4 visits\n")
                          .arg(i + 1)
                          .arg(cell.first.x())
@@ -660,25 +713,26 @@ void MainWindow::toggleStatistics(bool enabled) {
 }
 
 void MainWindow::exportStatistics() {
-    QString fileName = QFileDialog::getSaveFileName(this, "Export Statistics",
-                                                    "ant_statistics.csv",
-                                                    "CSV Files (*.csv)");
+    QString fileName = QFileDialog::getSaveFileName(
+        this, "Export Statistics", "ant_statistics.csv", "CSV Files (*.csv)");
     if (!fileName.isEmpty()) {
         try {
             antField->exportStatisticsToCSV(fileName);
-            statusBar()->showMessage("Statistics exported to " + fileName, 3000);
-        } catch (const std::exception &e) {
-            QMessageBox::critical(this, "Export Error",
-                                  QString("Failed to export: %1").arg(e.what()));
+            statusBar()->showMessage("Statistics exported to " + fileName,
+                                     3000);
+        } catch (const std::exception& e) {
+            QMessageBox::critical(
+                this, "Export Error",
+                QString("Failed to export: %1").arg(e.what()));
         }
     }
 }
 
 void MainWindow::showCellDetails() {
     bool ok;
-    QString text = QInputDialog::getText(this, "Check Cell",
-                                         "Enter cell coordinates (x,y):",
-                                         QLineEdit::Normal, "0,0", &ok);
+    QString text = QInputDialog::getText(
+        this, "Check Cell", "Enter cell coordinates (x,y):", QLineEdit::Normal,
+        "0,0", &ok);
     if (ok && !text.isEmpty()) {
         QStringList coords = text.split(',');
         if (coords.size() == 2) {
@@ -687,12 +741,16 @@ void MainWindow::showCellDetails() {
             int y = coords[1].trimmed().toInt(&yOk);
             if (xOk && yOk) {
                 int visits = antField->getVisitCount(x, y);
-                QMessageBox::information(this, "Cell Details",
-                                         QString("Cell (%1, %2) has been visited %3 times")
-                                             .arg(x).arg(y).arg(visits));
+                QMessageBox::information(
+                    this, "Cell Details",
+                    QString("Cell (%1, %2) has been visited %3 times")
+                        .arg(x)
+                        .arg(y)
+                        .arg(visits));
             } else {
-                QMessageBox::warning(this, "Invalid Input",
-                                     "Please enter valid integers for coordinates.");
+                QMessageBox::warning(
+                    this, "Invalid Input",
+                    "Please enter valid integers for coordinates.");
             }
         } else {
             QMessageBox::warning(this, "Invalid Format",

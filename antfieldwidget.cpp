@@ -47,7 +47,7 @@ void AntFieldWidget::updateStateColors() {
     int maxStates = qMax(2, rules.length());
 
     for (int state = 0; state < maxStates; ++state) {
-        float ratio = static_cast<float>(state) / (maxStates - 1);
+        float ratio = static_cast<float>(state) / (maxStates > 1 ? (maxStates - 1) : 1);
         int hue = static_cast<int>(ratio * 360) % 360;
         stateColorCache.append(QColor::fromHsv(hue, 200, 230));
     }
@@ -210,6 +210,14 @@ void AntFieldWidget::nextStep(int steps) {
 
     emit antMoved(antX, antY, antDir, stepCount);
     emit stepsChanged(stepCount);
+}
+
+void AntFieldWidget::setDisplayStyle(DisplayStyle style) {
+    if (currentStyle != style) {
+        currentStyle = style;
+        needsRedraw = true;
+        update();
+    }
 }
 
 int AntFieldWidget::getVisitCount(int x, int y) const {
@@ -403,82 +411,14 @@ void AntFieldWidget::paintEvent(QPaintEvent *event) {
 
     QPainter painter(this);
     painter.drawPixmap(0, 0, bufferPixmap);
-    // Draw Stats Overlay
-    // Only draw text if zoomed in enough to be readable
-    if (statisticsEnabled && zoomFactor > 3.0) {
-        if (statisticsEnabled && zoomFactor * cellSize > 15.0) {
-            QMutexLocker locker(&statisticsMutex);
-
-            QPoint topLeft = screenToField(QPoint(0, 0));
-            QPoint bottomRight = screenToField(QPoint(width(), height()));
-
-            // Helper lambda to draw text that fits in a corner
-            auto drawCornerText = [&](const QRect &cellRect, int value, Qt::Alignment align) {
-                if (value <= 0) return;
-                QString text = QString::number(value);
-
-                // Define max dimensions (approx half the cell minus padding)
-                int maxW = cellRect.width() / 2 - 2;
-                int maxH = cellRect.height() / 2 - 2;
-
-                if (maxW < 4 || maxH < 6) return; // Too small to draw anything readable
-
-                QFont f = painter.font();
-                // Start with a max font size (e.g., 40% of cell height)
-                int pixelSize = qMin(maxH, static_cast<int>(cellRect.height() * 0.4));
-
-                // Dynamic Sizing: Shrink font until text fits
-                f.setPixelSize(pixelSize);
-                QFontMetrics fm(f);
-                while (pixelSize > 4 && (fm.horizontalAdvance(text) > maxW)) {
-                    pixelSize--;
-                    f.setPixelSize(pixelSize);
-                    fm = QFontMetrics(f);
-                }
-
-                painter.setFont(f);
-
-                // Determine sub-rect for the corner
-                QRect cornerRect = cellRect;
-                cornerRect.setWidth(cellRect.width() / 2);
-                cornerRect.setHeight(cellRect.height() / 2);
-
-                if (align & Qt::AlignRight) cornerRect.moveLeft(cellRect.center().x());
-                if (align & Qt::AlignBottom) cornerRect.moveTop(cellRect.center().y());
-
-                // Draw
-                painter.setPen(Qt::black); // You might want to invert this based on cell color
-                painter.drawText(cornerRect, Qt::AlignCenter, text);
-            };
-
-            // Iterate visible area
-            for (int x = topLeft.x() - 1; x <= bottomRight.x() + 1; ++x) {
-                for (int y = topLeft.y() - 1; y <= bottomRight.y() + 1; ++y) {
-                    QPair<int, int> key(x, y);
-                    if (!cellStatistics.contains(key)) continue;
-
-                    const CellStatistics &stats = cellStatistics[key];
-                    QPoint screenPos = fieldToScreen(QPoint(x, y));
-                    int size = static_cast<int>(cellSize * zoomFactor);
-                    QRect cellRect(screenPos.x(), screenPos.y(), size, size);
-
-                    // Draw 4 corners with auto-sizing
-                    drawCornerText(cellRect, stats.cornerCounts[0], Qt::AlignLeft | Qt::AlignTop);     // Top-Left
-                    drawCornerText(cellRect, stats.cornerCounts[1], Qt::AlignRight | Qt::AlignTop);    // Top-Right
-                    drawCornerText(cellRect, stats.cornerCounts[2], Qt::AlignRight | Qt::AlignBottom); // Bottom-Right
-                    drawCornerText(cellRect, stats.cornerCounts[3], Qt::AlignLeft | Qt::AlignBottom);  // Bottom-Left
-                }
-            }
-        }
-    }
 }
 
 void AntFieldWidget::redrawBuffer() {
     bufferPixmap = QPixmap(size());
-    bufferPixmap.fill(QColor(240, 240, 240));
+    bufferPixmap.fill(Qt::white);
 
     QPainter painter(&bufferPixmap);
-    painter.setRenderHint(QPainter::Antialiasing, false);
+    painter.setRenderHint(QPainter::Antialiasing, true);
 
     const double scaledCellSize = cellSize * zoomFactor;
 
@@ -494,114 +434,90 @@ void AntFieldWidget::redrawBuffer() {
     const int startY = qFloor((-offsetY) / scaledCellSize) - 1;
     const int endY = qCeil((height() - offsetY) / scaledCellSize) + 1;
 
-    // Clip to actual bounds
-    const int drawStartX = qMax(startX, minX);
-    const int drawEndX = qMin(endX, maxX + 1);
-    const int drawStartY = qMax(startY, minY);
-    const int drawEndY = qMin(endY, maxY + 1);
-
     // Draw grid if cells are large enough
-    if (scaledCellSize >= 8) {
-        painter.setPen(QPen(QColor(220, 220, 220), 1));
-
-        for (int x = drawStartX; x <= drawEndX; ++x) {
+    if (scaledCellSize >= 4) {
+        painter.setPen(QPen(QColor(220, 220, 220), 0.5));
+        for (int x = startX; x <= endX; ++x) {
             double screenX = offsetX + x * scaledCellSize;
-            painter.drawLine(QPointF(screenX, offsetY + drawStartY * scaledCellSize),
-                             QPointF(screenX, offsetY + drawEndY * scaledCellSize));
+            painter.drawLine(QPointF(screenX, offsetY + startY * scaledCellSize), QPointF(screenX, offsetY + endY * scaledCellSize));
         }
-
-        for (int y = drawStartY; y <= drawEndY; ++y) {
+        for (int y = startY; y <= endY; ++y) {
             double screenY = offsetY + y * scaledCellSize;
-            painter.drawLine(QPointF(offsetX + drawStartX * scaledCellSize, screenY),
-                             QPointF(offsetX + drawEndX * scaledCellSize, screenY));
+            painter.drawLine(QPointF(offsetX + startX * scaledCellSize, screenY), QPointF(offsetX + endX * scaledCellSize, screenY));
         }
     }
 
-    // Draw all cells
-    for (int y = drawStartY; y < drawEndY; ++y) {
-        for (int x = drawStartX; x < drawEndX; ++x) {
-            QPair<int, int> cellKey(x, y);
-            auto it = cells.constFind(cellKey);
-            QColor color;
-
+    // Draw cell colors
+    for (int y = startY; y <= endY; ++y) {
+        for (int x = startX; x <= endX; ++x) {
+            auto it = cells.constFind({x, y});
             if (it != cells.constEnd()) {
-                // Cell exists in the grid
                 int state = it.value();
-                color = (state > 0) ? stateToColor(state) : Qt::white;
-            } else {
-                // Check if cell was visited (for statistics)
-                if (statisticsEnabled) {
-                    // Check if this cell has been visited at all
-                    QMutexLocker locker(&statisticsMutex);
-                    auto statIt = cellStatistics.constFind(cellKey);
-                    if (statIt != cellStatistics.constEnd()) {
-                        // Cell has been visited, but has state 0 (white)
-                        color = Qt::white;
-                    } else {
-                        // Cell not visited, use background color
-                        color = QColor(240, 240, 240);
-                    }
-                } else {
-                    color = QColor(240, 240, 240);
-                }
-            }
-
-            double screenX = offsetX + x * scaledCellSize;
-            double screenY = offsetY + y * scaledCellSize;
-            painter.fillRect(QRectF(screenX, screenY,
-                                    scaledCellSize, scaledCellSize), color);
-        }
-    }
-
-    // Draw visit counts for ALL visited cells in the visible area
-    if (scaledCellSize >= 8 && statisticsEnabled) {
-        painter.setPen(Qt::black);
-
-        // Adjust font size based on cell size
-        if (scaledCellSize < 12) {
-            painter.setFont(QFont("Arial", 6));
-        } else {
-            painter.setFont(QFont("Arial", 8));
-        }
-
-        // Get a copy of cellStatistics while holding the mutex
-        QHash<QPair<int, int>, CellStatistics> statsCopy;
-        {
-            QMutexLocker locker(&statisticsMutex);
-            statsCopy = cellStatistics;
-        }
-
-        // Now iterate through all visited cells and draw labels for those in visible area
-        for (auto it = statsCopy.constBegin(); it != statsCopy.constEnd(); ++it) {
-            int x = it.key().first;
-            int y = it.key().second;
-            int visits = it->visitCount;
-
-            // Skip if not in visible area
-            if (x < drawStartX || x >= drawEndX || y < drawStartY || y >= drawEndY) {
-                continue;
-            }
-
-            // Draw visit count for ALL visited cells (even with 1 visit)
-            if (visits > 0) {
+                QColor color = (state > 0) ? stateToColor(state) : Qt::white;
                 double screenX = offsetX + x * scaledCellSize;
                 double screenY = offsetY + y * scaledCellSize;
+                painter.fillRect(QRectF(screenX, screenY, scaledCellSize, scaledCellSize), color);
+            }
+        }
+    }
 
-                // Check if the cell is white (state 0)
-                auto cellIt = cells.constFind(QPair<int, int>(x, y));
-                bool isWhiteCell = (cellIt == cells.constEnd() || cellIt.value() == 0);
+    // Draw statistics overlay
+    if (statisticsEnabled && scaledCellSize >= 8 && currentStyle != JustColors) {
+        QMutexLocker locker(&statisticsMutex);
+        painter.setPen(Qt::black);
 
-                if (isWhiteCell) {
-                    // For white cells, draw a subtle background to make text readable
-                    painter.setBrush(QColor(245, 245, 245, 200));
-                    painter.setPen(Qt::NoPen);
-                    painter.drawRect(QRectF(screenX, screenY,
-                                            scaledCellSize, scaledCellSize));
-                    painter.setPen(Qt::black);
+        for (int y = startY; y <= endY; ++y) {
+            for (int x = startX; x <= endX; ++x) {
+                auto statIt = cellStatistics.constFind({x, y});
+                if (statIt == cellStatistics.constEnd()) continue;
+
+                QRectF cellRect(offsetX + x * scaledCellSize, offsetY + y * scaledCellSize, scaledCellSize, scaledCellSize);
+                QString text = QString::number(statIt->visitCount);
+
+                if (currentStyle == Visits) {
+                    QFont font = painter.font();
+                    font.setPointSizeF(1);
+                    painter.setFont(font);
+                    QRectF textRect = painter.fontMetrics().boundingRect(text);
+
+                    double scaleX = (cellRect.width() * 0.9) / textRect.width();
+                    double scaleY = (cellRect.height() * 0.9) / textRect.height();
+                    double scale = qMin(scaleX, scaleY);
+
+                    font.setPointSizeF(font.pointSizeF() * scale);
+                    painter.setFont(font);
+
+                    painter.drawText(cellRect, Qt::AlignCenter, text);
+                } else if (currentStyle == Rotations) {
+                    auto drawCornerText = [&](const QRectF &rect, int value, Qt::Alignment align) {
+                        if (value <= 0) return;
+                        QString text = QString::number(value);
+                        QRectF cornerRect = rect;
+                        cornerRect.setWidth(rect.width() / 2);
+                        cornerRect.setHeight(rect.height() / 2);
+                        if (align & Qt::AlignRight) cornerRect.moveLeft(rect.center().x());
+                        if (align & Qt::AlignBottom) cornerRect.moveTop(rect.center().y());
+
+                        QFont font = painter.font();
+                        font.setPointSizeF(1);
+                        painter.setFont(font);
+                        QRectF textRect = painter.fontMetrics().boundingRect(text);
+
+                        double scaleX = (cornerRect.width() * 0.9) / textRect.width();
+                        double scaleY = (cornerRect.height() * 0.9) / textRect.height();
+                        double scale = qMin(scaleX, scaleY);
+
+                        font.setPointSizeF(font.pointSizeF() * scale);
+                        painter.setFont(font);
+
+                        painter.drawText(cornerRect, Qt::AlignCenter, text);
+                    };
+
+                    drawCornerText(cellRect, statIt->cornerCounts[0], Qt::AlignLeft | Qt::AlignTop);
+                    drawCornerText(cellRect, statIt->cornerCounts[1], Qt::AlignRight | Qt::AlignTop);
+                    drawCornerText(cellRect, statIt->cornerCounts[2], Qt::AlignRight | Qt::AlignBottom);
+                    drawCornerText(cellRect, statIt->cornerCounts[3], Qt::AlignLeft | Qt::AlignBottom);
                 }
-
-                painter.drawText(QRectF(screenX, screenY, scaledCellSize, scaledCellSize),
-                                 Qt::AlignCenter, QString::number(visits));
             }
         }
     }
