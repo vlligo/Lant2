@@ -207,6 +207,7 @@ void AntFieldWidget::nextStep(int steps) {
     setUpdatesEnabled(true);
     needsRedraw = true;
     update();
+    centerOnAnt();
 
     emit antMoved(antX, antY, antDir, stepCount);
     emit stepsChanged(stepCount);
@@ -372,7 +373,7 @@ void AntFieldWidget::setZoom(double zoom) {
     QPoint oldCenterScreen = fieldToScreen(centerPoint);
 
     // Set the new zoom factor
-    zoomFactor = qBound(0.1, zoom, 20.0);
+    zoomFactor = qBound(0.00001, zoom, 50.0);
 
     // Calculate where the same field point should be on screen after zoom
     QPoint newCenterScreen = fieldToScreen(centerPoint);
@@ -422,47 +423,92 @@ void AntFieldWidget::redrawBuffer() {
 
     const double scaledCellSize = cellSize * zoomFactor;
 
-    if (scaledCellSize < 0.5) {
-        painter.setPen(Qt::red);
-        painter.drawText(rect(), Qt::AlignCenter, "Zoomed out too far");
-        return;
-    }
-
     // Calculate visible bounds
     const int startX = qFloor((-offsetX) / scaledCellSize) - 1;
     const int endX = qCeil((width() - offsetX) / scaledCellSize) + 1;
     const int startY = qFloor((-offsetY) / scaledCellSize) - 1;
     const int endY = qCeil((height() - offsetY) / scaledCellSize) + 1;
 
-    // Draw grid if cells are large enough
-    if (scaledCellSize >= 4) {
-        painter.setPen(QPen(QColor(220, 220, 220), 0.5));
-        for (int x = startX; x <= endX; ++x) {
-            double screenX = offsetX + x * scaledCellSize;
-            painter.drawLine(QPointF(screenX, offsetY + startY * scaledCellSize), QPointF(screenX, offsetY + endY * scaledCellSize));
-        }
-        for (int y = startY; y <= endY; ++y) {
-            double screenY = offsetY + y * scaledCellSize;
-            painter.drawLine(QPointF(offsetX + startX * scaledCellSize, screenY), QPointF(offsetX + endX * scaledCellSize, screenY));
-        }
-    }
+    // --- Drawing Optimization ---
+    const qint64 viewWidth = endX - startX;
+    const qint64 viewHeight = endY - startY;
+    const qint64 viewportCellCount = (viewWidth > 0 && viewHeight > 0 && viewWidth > LLONG_MAX / viewHeight) ? LLONG_MAX : viewWidth * viewHeight;
 
-    // Draw cell colors
-    for (int y = startY; y <= endY; ++y) {
-        for (int x = startX; x <= endX; ++x) {
-            auto it = cells.constFind({x, y});
-            if (it != cells.constEnd()) {
-                int state = it.value();
-                QColor color = (state > 0) ? stateToColor(state) : Qt::white;
+    bool useOptimizedDrawing = (scaledCellSize < 1.0) && (viewportCellCount > cells.size());
+
+    if (useOptimizedDrawing) {
+        // Optimized path for high zoom-out:
+        // Render to a QImage first to ensure one cell state per pixel.
+        QImage image(size(), QImage::Format_ARGB32);
+        image.fill(Qt::white);
+
+        QRgb* pixels = reinterpret_cast<QRgb*>(image.bits());
+        int imageWidth = image.width();
+        int imageHeight = image.height();
+
+        // Create a cache of QRgb colors for performance
+        QVector<QRgb> rgbColorCache;
+        rgbColorCache.reserve(stateColorCache.size());
+        for (const QColor &color : stateColorCache) {
+            rgbColorCache.append(color.rgb());
+        }
+        if (rgbColorCache.isEmpty()) {
+             rgbColorCache.append(QColor::fromHsv(0, 200, 230).rgb());
+        }
+
+        for (auto it = cells.constBegin(); it != cells.constEnd(); ++it) {
+            const int state = it.value();
+            if (state > 0) {
+                const int cellX = it.key().first;
+                const int cellY = it.key().second;
+
+                int screenX = qFloor(offsetX + cellX * scaledCellSize);
+                int screenY = qFloor(offsetY + cellY * scaledCellSize);
+
+                if (screenX >= 0 && screenX < imageWidth && screenY >= 0 && screenY < imageHeight) {
+                    int pixelIndex = screenY * imageWidth + screenX;
+                    // "First come, first served" for a given pixel
+                    if (pixels[pixelIndex] == 0xFFFFFFFF) { // Check for white
+                        pixels[pixelIndex] = rgbColorCache[state % rgbColorCache.size()];
+                    }
+                }
+            }
+        }
+        painter.drawImage(0, 0, image);
+
+    } else {
+        // Default path for zoom-in: Iterate over the visible grid
+        // Draw grid if cells are large enough
+        if (scaledCellSize >= 4) {
+            painter.setPen(QPen(QColor(220, 220, 220), 0.5));
+            for (int x = startX; x <= endX; ++x) {
                 double screenX = offsetX + x * scaledCellSize;
+                painter.drawLine(QPointF(screenX, offsetY + startY * scaledCellSize), QPointF(screenX, offsetY + endY * scaledCellSize));
+            }
+            for (int y = startY; y <= endY; ++y) {
                 double screenY = offsetY + y * scaledCellSize;
-                painter.fillRect(QRectF(screenX, screenY, scaledCellSize, scaledCellSize), color);
+                painter.drawLine(QPointF(offsetX + startX * scaledCellSize, screenY), QPointF(offsetX + endX * scaledCellSize, screenY));
+            }
+        }
+
+        // Draw cell colors
+        for (int y = startY; y <= endY; ++y) {
+            for (int x = startX; x <= endX; ++x) {
+                auto it = cells.constFind({x, y});
+                if (it != cells.constEnd()) {
+                    int state = it.value();
+                    QColor color = (state > 0) ? stateToColor(state) : Qt::white;
+                    double screenX = offsetX + x * scaledCellSize;
+                    double screenY = offsetY + y * scaledCellSize;
+                    painter.fillRect(QRectF(screenX, screenY, scaledCellSize, scaledCellSize), color);
+                }
             }
         }
     }
 
-    // Draw statistics overlay
-    if (statisticsEnabled && scaledCellSize >= 8 && currentStyle != JustColors) {
+
+    // Draw statistics overlay (only when zoomed in enough)
+    if (!useOptimizedDrawing && statisticsEnabled && scaledCellSize >= 8 && currentStyle != JustColors) {
         QMutexLocker locker(&statisticsMutex);
         painter.setPen(Qt::black);
 
@@ -610,7 +656,7 @@ void AntFieldWidget::wheelEvent(QWheelEvent *event) {
         newZoom /= zoomStep;
     }
 
-    if (newZoom < 0.1 || newZoom > 50.0) return;
+    if (newZoom < 0.00001 || newZoom > 50.0) return;
 
     QPoint mousePos = event->position().toPoint();
 
