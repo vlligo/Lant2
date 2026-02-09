@@ -24,7 +24,7 @@ public:
 
 private slots:
     void updateRules();
-    void onAntMoved(int x, int y, int direction, int steps);
+    void onAntMoved(int x, int y, int direction, qint64 steps);
     void updateStatisticsTable();
     void takeStep();
     void onQuickStepsClicked();

@@ -276,7 +276,7 @@ void MainWindow::setupConnections() {
     connect(antField, &AntFieldWidget::antMoved, this, &MainWindow::onAntMoved);
     connect(antField, &AntFieldWidget::zoomChanged, this,
             &MainWindow::onZoomChanged);
-    connect(antField, &AntFieldWidget::stepsChanged, this, [this](int steps) {
+    connect(antField, &AntFieldWidget::stepsChanged, this, [this](qint64 steps) {
         stepsLabel->setText(QString("Total steps: %1").arg(steps));
     });
 
@@ -475,7 +475,7 @@ void MainWindow::updateRules() {
     updateQuickStatistics();
 }
 
-void MainWindow::onAntMoved(int x, int y, int direction, int steps) {
+void MainWindow::onAntMoved(int x, int y, int direction, qint64 steps) {
     static const QString dirSymbols[] = {"↑", "→", "↓", "←"};
     QString dirStr =
         (direction >= 0 && direction < 4) ? dirSymbols[direction] : "?";

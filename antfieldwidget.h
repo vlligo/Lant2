@@ -58,7 +58,7 @@ public:
     // Statistics methods
     int getVisitCount(int x, int y) const;
     QPoint getMostVisitedCell() const;
-    int getTotalVisitedCells() const;
+    qint64 getTotalVisitedCells() const;
     int getUniqueVisitedCells() const;
     AntStatisticsSummary getStatisticsSummary() const;
     void exportStatisticsToCSV(const QString &filename) const;
@@ -73,9 +73,9 @@ public slots:
     void setDisplayStyle(DisplayStyle style);
 
 signals:
-    void antMoved(int x, int y, int direction, int steps);
+    void antMoved(int x, int y, int direction, qint64 steps);
     void zoomChanged(double zoom);
-    void stepsChanged(int steps);
+    void stepsChanged(qint64 steps);
     void statisticsUpdated(const AntStatisticsSummary &summary);
     void cellVisited(const QPoint &cell, int visitCount);
     void mouseOverCell(int x, int y);
@@ -179,7 +179,7 @@ inline uint qHash(const QPair<int, int> &key, uint seed = 0) {
 }
 
 struct AntStatisticsSummary {
-    int totalCellsVisited = 0;
+    qint64 totalCellsVisited = 0;
     int maxVisitsPerCell = 0;
     QPoint mostVisitedCell;
     double averageVisits = 0.0;

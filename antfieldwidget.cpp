@@ -232,7 +232,7 @@ QPoint AntFieldWidget::getMostVisitedCell() const {
     return mostVisitedCell;
 }
 
-int AntFieldWidget::getTotalVisitedCells() const {
+qint64 AntFieldWidget::getTotalVisitedCells() const {
     return stepCount;
 }
 
