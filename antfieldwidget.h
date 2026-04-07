@@ -115,7 +115,7 @@ private:
     void updateMostVisitedCell(int x, int y, int newVisits);
 
     // Performance-optimized cell storage
-    QHash<QPair<int, int>, quint8> cells;
+    QHash<QPair<int, int>, int> cells;
 
     // Optimized statistics: use QMap for ordered access when needed
     QHash<QPair<int, int>, CellStatistics> cellStatistics;

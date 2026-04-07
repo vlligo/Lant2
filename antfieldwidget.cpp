@@ -109,7 +109,7 @@ void AntFieldWidget::nextStep(int steps) {
 
     for (int s = 0; s < steps; ++s) {
         QPair<int, int> cellKey(antX, antY);
-        quint8 &currentState = cells[cellKey];
+        int &currentState = cells[cellKey];
         int oldDir = antDir;
 
         // Logic
