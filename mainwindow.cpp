@@ -277,7 +277,7 @@ void MainWindow::setupConnections() {
     connect(antField, &AntFieldWidget::zoomChanged, this,
             &MainWindow::onZoomChanged);
     connect(antField, &AntFieldWidget::stepsChanged, this, [this](qint64 steps) {
-        stepsLabel->setText(QString("Total steps: %1").arg(steps));
+        stepsLabel->setText(QString("Total steps: %1").arg(QLocale().toString(steps)));
     });
 
     // Connect the mouse coordinate signal
@@ -384,7 +384,7 @@ void MainWindow::onMouseOverCell(int x, int y) {
     }
 }
 
-void MainWindow::updateQuickStatistics() {
+void MainWindow::updateQuickStatistics() const {
     if (!statsCheckBox->isChecked()) {
         uniqueCellsLabel->setText("Unique cells: 0");
         mostVisitedLabel->setText("Most visited: (0,0)");
@@ -396,12 +396,12 @@ void MainWindow::updateQuickStatistics() {
 
     auto summary = antField->getStatisticsSummary();
     uniqueCellsLabel->setText(
-        QString("Unique cells: %1").arg(summary.uniqueCellsVisited));
+        QString("Unique cells: %1").arg(QLocale().toString(summary.uniqueCellsVisited)));
     mostVisitedLabel->setText(QString("Most visited: (%1, %2)")
                                   .arg(summary.mostVisitedCell.x())
                                   .arg(summary.mostVisitedCell.y()));
     maxVisitsLabel->setText(
-        QString("Max visits: %1").arg(summary.maxVisitsPerCell));
+        QString("Max visits: %1").arg(QLocale().toString(summary.maxVisitsPerCell)));
     averageVisitsLabel->setText(
         QString("Average: %1").arg(summary.averageVisits, 0, 'f', 2));
 
@@ -410,7 +410,7 @@ void MainWindow::updateQuickStatistics() {
         statsLabel->setText(QString("Most visited: (%1, %2) = %3 times")
                                 .arg(summary.mostVisitedCell.x())
                                 .arg(summary.mostVisitedCell.y())
-                                .arg(summary.maxVisitsPerCell));
+                                .arg(QLocale().toString(summary.maxVisitsPerCell)));
     }
 }
 
@@ -674,13 +674,13 @@ void MainWindow::showStatistics() {
     QString statsText;
     statsText += QString("Simulation Statistics\n");
     statsText += QString("====================\n");
-    statsText += QString("Total Steps: %1\n").arg(summary.totalCellsVisited);
+    statsText += QString("Total Steps: %1\n").arg(QLocale().toString(summary.totalCellsVisited));
     statsText +=
         QString("Unique Cells Visited: %1\n").arg(summary.uniqueCellsVisited);
     statsText += QString("Most Visited Cell: (%1, %2) [%3 times]\n")
                      .arg(summary.mostVisitedCell.x())
                      .arg(summary.mostVisitedCell.y())
-                     .arg(summary.maxVisitsPerCell);
+                     .arg(QLocale().toString(summary.maxVisitsPerCell));
     statsText += QString("Average Visits per Cell: %1\n")
                      .arg(summary.averageVisits, 0, 'f', 2);
     statsText +=
@@ -693,7 +693,7 @@ void MainWindow::showStatistics() {
                          .arg(i + 1)
                          .arg(cell.first.x())
                          .arg(cell.first.y())
-                         .arg(cell.second);
+                         .arg(QLocale().toString(cell.second));
     }
 
     QMessageBox::information(this, "Detailed Statistics", statsText);

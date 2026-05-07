@@ -51,7 +51,7 @@ private:
     void loadPresets();
     void setupUI();
     void setupConnections();
-    void updateQuickStatistics();
+    void updateQuickStatistics() const;
 
     QHash<int, QString> presets;
     AntFieldWidget *antField;
