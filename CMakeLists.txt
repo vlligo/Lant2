@@ -18,6 +18,8 @@ set(PROJECT_SOURCES
     mainwindow.h
     antfieldwidget.h
     antfieldwidget.cpp
+        QInt64SpinBox.cpp
+        QInt64SpinBox.h
 )
 
 if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)

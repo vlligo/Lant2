@@ -1,12 +1,10 @@
 #include "antfieldwidget.h"
 #include <QPainter>
-#include <QMouseEvent>
 #include <QWheelEvent>
 #include <QApplication>
 #include <QtMath>
 #include <QFile>
 #include <QTextStream>
-#include <QDateTime>
 #include <algorithm>
 #include <QMutexLocker>
 #include <QTimer>
@@ -47,8 +45,8 @@ void AntFieldWidget::updateStateColors() {
     int maxStates = qMax(2, rules.length());
 
     for (int state = 0; state < maxStates; ++state) {
-        float ratio = static_cast<float>(state) / (maxStates > 1 ? (maxStates - 1) : 1);
-        int hue = static_cast<int>(ratio * 360) % 360;
+        const float ratio = static_cast<float>(state) / (maxStates > 1 ? (maxStates - 1) : 1);
+        const int hue = static_cast<int>(ratio * 360) % 360;
         stateColorCache.append(QColor::fromHsv(hue, 200, 230));
     }
 }
@@ -84,13 +82,13 @@ void AntFieldWidget::reset() {
     emit stepsChanged(stepCount);
 }
 
-void AntFieldWidget::nextStep(int steps) {
+void AntFieldWidget::nextStep(const qint64 steps) {
     if (rules.isEmpty() || steps <= 0) return;
 
     // Performance: batch updates
     setUpdatesEnabled(false);
 
-    const int ruleLength = rules.length();
+    const qint64 ruleLength = rules.length();
     static const QVector<QPoint> directions = {
         QPoint(0, -1),  // Up
         QPoint(1, 0),   // Right
@@ -100,15 +98,15 @@ void AntFieldWidget::nextStep(int steps) {
 
     // Batch statistics updates for performance
     struct LocalBatchData {
-        int visits = 0;
-        int corners[4] = {0, 0, 0, 0};
+        qint64 visits = 0;
+        qint64 corners[4] = {0, 0, 0, 0};
         qint64 firstVisitStep = -1;
         qint64 lastVisitStep = -1;
     };
-    QHash<QPair<int, int>, LocalBatchData> batchUpdates;
+    QHash<QPair<qint64, qint64>, LocalBatchData> batchUpdates;
 
-    for (int s = 0; s < steps; ++s) {
-        QPair<int, int> cellKey(antX, antY);
+    for (qint64 s = 0; s < steps; ++s) {
+        QPair<qint64, qint64> cellKey(antX, antY);
         int &currentState = cells[cellKey];
         int oldDir = antDir;
 
@@ -169,7 +167,7 @@ void AntFieldWidget::nextStep(int steps) {
         QMutexLocker locker(&statisticsMutex);
 
         for (auto it = batchUpdates.constBegin(); it != batchUpdates.constEnd(); ++it) {
-            QPair<int, int> cellKey = it.key();
+            QPair<qint64, qint64> cellKey = it.key();
             const LocalBatchData &data = it.value();
             CellStatistics &stats = cellStatistics[cellKey];
 
@@ -181,7 +179,7 @@ void AntFieldWidget::nextStep(int steps) {
             stats.visitCount += data.visits;
             stats.lastVisitStep = data.lastVisitStep;
 
-            for(int i=0; i<4; i++) {
+            for (int i = 0; i < 4; i++) {
                 stats.cornerCounts[i] += data.corners[i];
             }
 
@@ -221,9 +219,9 @@ void AntFieldWidget::setDisplayStyle(DisplayStyle style) {
     }
 }
 
-int AntFieldWidget::getVisitCount(int x, int y) const {
+int AntFieldWidget::getVisitCount(qint64 x, qint64 y) const {
     QMutexLocker locker(&statisticsMutex);
-    auto it = cellStatistics.constFind(QPair<int, int>(x, y));
+    auto it = cellStatistics.constFind(QPair<qint64, qint64>(x, y));
     return (it != cellStatistics.constEnd()) ? it->visitCount : 0;
 }
 
@@ -236,7 +234,7 @@ qint64 AntFieldWidget::getTotalVisitedCells() const {
     return stepCount;
 }
 
-int AntFieldWidget::getUniqueVisitedCells() const {
+qint64 AntFieldWidget::getUniqueVisitedCells() const {
     QMutexLocker locker(&statisticsMutex);
     return uniqueCellsCount;
 }
@@ -254,21 +252,21 @@ AntStatisticsSummary AntFieldWidget::getStatisticsSummary() const {
     // Calculate average visits (only if we have visited cells)
     if (summary.uniqueCellsVisited > 0) {
         // We can approximate average visits efficiently
-        summary.averageVisits = static_cast<double>(summary.totalCellsVisited) / summary.uniqueCellsVisited;
+        summary.averageVisits = static_cast<long double>(summary.totalCellsVisited) / summary.uniqueCellsVisited;
     }
 
     return summary;
 }
 
-QVector<QPair<QPoint, int>> AntFieldWidget::getTopVisitedCells(int count) const {
+QVector<QPair<QPoint, qint64>> AntFieldWidget::getTopVisitedCells(const int count) const {
     QMutexLocker locker(&statisticsMutex);
 
     if (cellStatistics.isEmpty()) {
-        return QVector<QPair<QPoint, int>>();
+        return {};
     }
 
     // Use a simple selection algorithm for top N cells (more efficient than full sort for large datasets)
-    QVector<QPair<QPoint, int>> result;
+    QVector<QPair<QPoint, qint64>> result;
     result.reserve(qMin(count, cellStatistics.size()));
 
     // If count is small relative to total, use a partial sort approach
@@ -281,17 +279,17 @@ QVector<QPair<QPoint, int>> AntFieldWidget::getTopVisitedCells(int count) const 
 
         // Sort and maintain top N
         std::sort(result.begin(), result.end(),
-                  [](const QPair<QPoint, int> &a, const QPair<QPoint, int> &b) {
+                  [](const QPair<QPoint, qint64> &a, const QPair<QPoint, qint64> &b) {
                       return a.second > b.second;
                   });
 
         // Process remaining items
         for (; it != cellStatistics.constEnd(); ++it) {
-            int visits = it->visitCount;
+            qint64 visits = it->visitCount;
             if (visits > result.last().second) {
                 // Insert in sorted position
                 auto pos = std::lower_bound(result.begin(), result.end(), visits,
-                                            [](const QPair<QPoint, int> &item, int value) {
+                                            [](const QPair<QPoint, qint64> &item, qint64 value) {
                                                 return item.second > value;
                                             });
                 if (pos != result.end()) {
@@ -352,20 +350,20 @@ void AntFieldWidget::resetStatistics() {
     simulationTimer.restart();
 }
 
-void AntFieldWidget::setStatisticsEnabled(bool enabled) {
+void AntFieldWidget::setStatisticsEnabled(const bool enabled) {
     statisticsEnabled = enabled;
     if (!enabled) {
         resetStatistics();
     }
 }
 
-void AntFieldWidget::setCellSize(int size) {
+void AntFieldWidget::setCellSize(const int size) {
     cellSize = qBound(1, size, 50);
     needsRedraw = true;
     update();
 }
 
-void AntFieldWidget::setZoom(double zoom) {
+void AntFieldWidget::setZoom(const double zoom) {
     // Get the current center point of the widget in field coordinates
     QPoint centerPoint = screenToField(QPoint(width() / 2, height() / 2));
 
@@ -388,14 +386,14 @@ void AntFieldWidget::setZoom(double zoom) {
 }
 
 void AntFieldWidget::centerOnAnt() {
-    double scaledCellSize = cellSize * zoomFactor;
+    const long double scaledCellSize = cellSize * zoomFactor;
     offsetX = width() / 2.0 - antX * scaledCellSize;
     offsetY = height() / 2.0 - antY * scaledCellSize;
     needsRedraw = true;
     update();
 }
 
-void AntFieldWidget::moveView(int dx, int dy) {
+void AntFieldWidget::moveView(const qint64 dx, const qint64 dy) {
     offsetX += dx;
     offsetY += dy;
     needsRedraw = true;
@@ -421,13 +419,13 @@ void AntFieldWidget::redrawBuffer() {
     QPainter painter(&bufferPixmap);
     painter.setRenderHint(QPainter::Antialiasing, true);
 
-    const double scaledCellSize = cellSize * zoomFactor;
+    const long double scaledCellSize = cellSize * zoomFactor;
 
     // Calculate visible bounds
-    const int startX = qFloor((-offsetX) / scaledCellSize) - 1;
-    const int endX = qCeil((width() - offsetX) / scaledCellSize) + 1;
-    const int startY = qFloor((-offsetY) / scaledCellSize) - 1;
-    const int endY = qCeil((height() - offsetY) / scaledCellSize) + 1;
+    const qint64 startX = qFloor((-offsetX) / scaledCellSize) - 1;
+    const qint64 endX = qCeil((width() - offsetX) / scaledCellSize) + 1;
+    const qint64 startY = qFloor((-offsetY) / scaledCellSize) - 1;
+    const qint64 endY = qCeil((height() - offsetY) / scaledCellSize) + 1;
 
     // --- Drawing Optimization ---
     const qint64 viewWidth = endX - startX;
@@ -442,7 +440,7 @@ void AntFieldWidget::redrawBuffer() {
         QImage image(size(), QImage::Format_ARGB32);
         image.fill(Qt::white);
 
-        QRgb* pixels = reinterpret_cast<QRgb*>(image.bits());
+        auto pixels = reinterpret_cast<QRgb*>(image.bits());
         int imageWidth = image.width();
         int imageHeight = image.height();
 
@@ -459,14 +457,14 @@ void AntFieldWidget::redrawBuffer() {
         for (auto it = cells.constBegin(); it != cells.constEnd(); ++it) {
             const int state = it.value();
             if (state > 0) {
-                const int cellX = it.key().first;
-                const int cellY = it.key().second;
+                const qint64 cellX = it.key().first;
+                const qint64 cellY = it.key().second;
 
-                int screenX = qFloor(offsetX + cellX * scaledCellSize);
-                int screenY = qFloor(offsetY + cellY * scaledCellSize);
+                qint64 screenX = qFloor(offsetX + cellX * scaledCellSize);
+                qint64 screenY = qFloor(offsetY + cellY * scaledCellSize);
 
                 if (screenX >= 0 && screenX < imageWidth && screenY >= 0 && screenY < imageHeight) {
-                    int pixelIndex = screenY * imageWidth + screenX;
+                    qint64 pixelIndex = screenY * imageWidth + screenX;
                     // "First come, first served" for a given pixel
                     if (pixels[pixelIndex] == 0xFFFFFFFF) { // Check for white
                         pixels[pixelIndex] = rgbColorCache[state % rgbColorCache.size()];
@@ -481,25 +479,25 @@ void AntFieldWidget::redrawBuffer() {
         // Draw grid if cells are large enough
         if (scaledCellSize >= 4) {
             painter.setPen(QPen(QColor(220, 220, 220), 0.5));
-            for (int x = startX; x <= endX; ++x) {
-                double screenX = offsetX + x * scaledCellSize;
+            for (qint64 x = startX; x <= endX; ++x) {
+                long double screenX = offsetX + x * scaledCellSize;
                 painter.drawLine(QPointF(screenX, offsetY + startY * scaledCellSize), QPointF(screenX, offsetY + endY * scaledCellSize));
             }
-            for (int y = startY; y <= endY; ++y) {
-                double screenY = offsetY + y * scaledCellSize;
+            for (qint64 y = startY; y <= endY; ++y) {
+                long double screenY = offsetY + y * scaledCellSize;
                 painter.drawLine(QPointF(offsetX + startX * scaledCellSize, screenY), QPointF(offsetX + endX * scaledCellSize, screenY));
             }
         }
 
         // Draw cell colors
-        for (int y = startY; y <= endY; ++y) {
-            for (int x = startX; x <= endX; ++x) {
+        for (qint64 y = startY; y <= endY; ++y) {
+            for (qint64 x = startX; x <= endX; ++x) {
                 auto it = cells.constFind({x, y});
                 if (it != cells.constEnd()) {
                     int state = it.value();
                     QColor color = (state > 0) ? stateToColor(state) : Qt::white;
-                    double screenX = offsetX + x * scaledCellSize;
-                    double screenY = offsetY + y * scaledCellSize;
+                    long double screenX = offsetX + x * scaledCellSize;
+                    long double screenY = offsetY + y * scaledCellSize;
                     painter.fillRect(QRectF(screenX, screenY, scaledCellSize, scaledCellSize), color);
                 }
             }
@@ -512,8 +510,8 @@ void AntFieldWidget::redrawBuffer() {
         QMutexLocker locker(&statisticsMutex);
         painter.setPen(Qt::black);
 
-        for (int y = startY; y <= endY; ++y) {
-            for (int x = startX; x <= endX; ++x) {
+        for (qint64 y = startY; y <= endY; ++y) {
+            for (qint64 x = startX; x <= endX; ++x) {
                 auto statIt = cellStatistics.constFind({x, y});
                 if (statIt == cellStatistics.constEnd()) continue;
 
@@ -526,18 +524,18 @@ void AntFieldWidget::redrawBuffer() {
                     painter.setFont(font);
                     QRectF textRect = painter.fontMetrics().boundingRect(text);
 
-                    double scaleX = (cellRect.width() * 0.9) / textRect.width();
-                    double scaleY = (cellRect.height() * 0.9) / textRect.height();
-                    double scale = qMin(scaleX, scaleY);
+                    long double scaleX = (cellRect.width() * 0.9) / textRect.width();
+                    long double scaleY = (cellRect.height() * 0.9) / textRect.height();
+                    long double scale = qMin(scaleX, scaleY);
 
                     font.setPointSizeF(font.pointSizeF() * scale);
                     painter.setFont(font);
 
                     painter.drawText(cellRect, Qt::AlignCenter, text);
                 } else if (currentStyle == Rotations) {
-                    auto drawCornerText = [&](const QRectF &rect, int value, Qt::Alignment align) {
+                    auto drawCornerText = [&](const QRectF &rect, const int value, const Qt::Alignment align) {
                         if (value <= 0) return;
-                        QString text = QString::number(value);
+                        QString cur_text = QString::number(value);
                         QRectF cornerRect = rect;
                         cornerRect.setWidth(rect.width() / 2);
                         cornerRect.setHeight(rect.height() / 2);
@@ -547,16 +545,16 @@ void AntFieldWidget::redrawBuffer() {
                         QFont font = painter.font();
                         font.setPointSizeF(1);
                         painter.setFont(font);
-                        QRectF textRect = painter.fontMetrics().boundingRect(text);
+                        const QRectF textRect = painter.fontMetrics().boundingRect(cur_text);
 
-                        double scaleX = (cornerRect.width() * 0.9) / textRect.width();
-                        double scaleY = (cornerRect.height() * 0.9) / textRect.height();
-                        double scale = qMin(scaleX, scaleY);
+                        const long double scaleX = (cornerRect.width() * 0.9) / textRect.width();
+                        const long double scaleY = (cornerRect.height() * 0.9) / textRect.height();
+                        const long double scale = qMin(scaleX, scaleY);
 
                         font.setPointSizeF(font.pointSizeF() * scale);
                         painter.setFont(font);
 
-                        painter.drawText(cornerRect, Qt::AlignCenter, text);
+                        painter.drawText(cornerRect, Qt::AlignCenter, cur_text);
                     };
 
                     drawCornerText(cellRect, statIt->cornerCounts[0], Qt::AlignLeft | Qt::AlignTop);
@@ -569,8 +567,8 @@ void AntFieldWidget::redrawBuffer() {
     }
 
     // Draw ant
-    const double antScreenX = offsetX + antX * scaledCellSize;
-    const double antScreenY = offsetY + antY * scaledCellSize;
+    const long double antScreenX = offsetX + antX * scaledCellSize;
+    const long double antScreenY = offsetY + antY * scaledCellSize;
     const QPointF antCenter(antScreenX + scaledCellSize / 2,
                             antScreenY + scaledCellSize / 2);
 
@@ -578,7 +576,7 @@ void AntFieldWidget::redrawBuffer() {
         painter.setBrush(Qt::red);
         painter.setPen(QPen(Qt::black, 1));
 
-        const double radius = scaledCellSize * 0.4;
+        const long double radius = scaledCellSize * 0.4;
         QPolygonF triangle;
         triangle << antCenter + QPointF(0, -radius)
                  << antCenter + QPointF(radius * 0.7, radius * 0.7)
@@ -605,8 +603,8 @@ QPoint AntFieldWidget::screenToField(const QPoint &screenPos) const {
 
 QPoint AntFieldWidget::fieldToScreen(const QPoint &fieldPos) const {
     const double scaledCellSize = cellSize * zoomFactor;
-    return QPoint(qRound(fieldPos.x() * scaledCellSize + offsetX),
-                  qRound(fieldPos.y() * scaledCellSize + offsetY));
+    return QPoint(qRound(double(fieldPos.x() * scaledCellSize + offsetX)),
+                  qRound(double(fieldPos.y() * scaledCellSize + offsetY)));
 }
 
 QColor AntFieldWidget::stateToColor(int state) const {
@@ -646,8 +644,8 @@ void AntFieldWidget::mouseReleaseEvent(QMouseEvent *event) {
 }
 
 void AntFieldWidget::wheelEvent(QWheelEvent *event) {
-    const double zoomStep = 1.2;
-    double oldZoom = zoomFactor;
+    constexpr double zoomStep = 1.2;
+    const double oldZoom = zoomFactor;
     double newZoom = zoomFactor;
 
     if (event->angleDelta().y() > 0) {
@@ -678,7 +676,7 @@ void AntFieldWidget::resizeEvent(QResizeEvent *event) {
     needsRedraw = true;
 }
 
-void AntFieldWidget::centerOnPoint(int x, int y) {
+void AntFieldWidget::centerOnPoint(qint64 x, qint64 y) {
     double scaledCellSize = cellSize * zoomFactor;
     offsetX = width() / 2.0 - x * scaledCellSize;
     offsetY = height() / 2.0 - y * scaledCellSize;
@@ -709,6 +707,6 @@ void AntFieldWidget::enterEvent(QEnterEvent *event) {
 void AntFieldWidget::leaveEvent(QEvent *event) {
     QWidget::leaveEvent(event);
     // Clear coordinates when mouse leaves
-    lastMouseCellPos = QPoint(INT_MAX, INT_MAX);
-    emit mouseOverCell(INT_MAX, INT_MAX);
+    lastMouseCellPos = QPoint(0, 0);
+    emit mouseOverCell(0, 0);
 }

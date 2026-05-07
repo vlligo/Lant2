@@ -5,12 +5,10 @@
 #include <QString>
 #include <QColor>
 #include <QHash>
-#include <QPair>
 #include <QVector>
 #include <QMutex>
 #include <QElapsedTimer>
 #include <QPoint>
-#include <QMap>
 #include <QTimer>
 
 // Forward declaration
@@ -28,22 +26,22 @@ public:
     Q_ENUM(DisplayStyle)
 
     struct CellStatistics {
-        int visitCount = 0;
+        qint64 visitCount = 0;
         qint64 lastVisitStep = 0;
         qint64 firstVisitStep = 0;
         // Index 0: Top-Left (Left<->Top)
         // Index 1: Top-Right (Top<->Right)
         // Index 2: Bottom-Right (Right<->Bottom)
         // Index 3: Bottom-Left (Bottom<->Left)
-        int cornerCounts[4] = {0, 0, 0, 0};
+        qint64 cornerCounts[4] = {0, 0, 0, 0};
     };
 
     explicit AntFieldWidget(QWidget *parent = nullptr);
-    ~AntFieldWidget();
+    ~AntFieldWidget() override;
 
     void setRules(const QString &rules);
     void reset();
-    void nextStep(int steps = 1);
+    void nextStep(qint64 steps = 1);
     void setCellSize(int size);
     void setZoom(double zoom);
     double getZoom() const { return zoomFactor; }
@@ -51,20 +49,20 @@ public:
 
     // View centering methods
     void centerOnAnt();
-    void centerOnPoint(int x, int y);
+    void centerOnPoint(qint64 x, qint64 y);
     void centerOnPoint(const QPoint &point);
-    void moveView(int dx, int dy);
+    void moveView(qint64 dx, qint64 dy);
 
     // Statistics methods
-    int getVisitCount(int x, int y) const;
+    int getVisitCount(qint64 x, qint64 y) const;
     QPoint getMostVisitedCell() const;
     qint64 getTotalVisitedCells() const;
-    int getUniqueVisitedCells() const;
+    qint64 getUniqueVisitedCells() const;
     AntStatisticsSummary getStatisticsSummary() const;
     void exportStatisticsToCSV(const QString &filename) const;
     void resetStatistics();
     void setStatisticsEnabled(bool enabled);
-    QVector<QPair<QPoint, int>> getTopVisitedCells(int count) const;
+    QVector<QPair<QPoint, qint64>> getTopVisitedCells(int count) const;
 
     // Performance optimized methods
     QVector<QPoint> getRecentlyVisitedCells() const { return recentlyVisitedCells; }
@@ -73,12 +71,12 @@ public slots:
     void setDisplayStyle(DisplayStyle style);
 
 signals:
-    void antMoved(int x, int y, int direction, qint64 steps);
+    void antMoved(qint64 x, qint64 y, int direction, qint64 steps);
     void zoomChanged(double zoom);
     void stepsChanged(qint64 steps);
     void statisticsUpdated(const AntStatisticsSummary &summary);
-    void cellVisited(const QPoint &cell, int visitCount);
-    void mouseOverCell(int x, int y);
+    void cellVisited(const QPoint &cell, qint64 visitCount);
+    void mouseOverCell(qint64 x, qint64 y);
 
 protected:
     void paintEvent(QPaintEvent *event) override;
@@ -103,26 +101,20 @@ private:
     void redrawBuffer();
     void updateStateColors();
     QColor stateToColor(int state) const;
-    QColor visitsToColor(int visitCount) const;
-    QColor rotationsToColor(const CellStatistics& stats) const;
 
 
     // Mouse position tracking
     void updateMousePosition(const QPoint &pos);  // Add this method
 
-    // Optimized statistics update
-    void updateStatistics(int x, int y);
-    void updateMostVisitedCell(int x, int y, int newVisits);
-
     // Performance-optimized cell storage
-    QHash<QPair<int, int>, int> cells;
+    QHash<QPair<qint64, qint64>, int> cells;
 
     // Optimized statistics: use QMap for ordered access when needed
-    QHash<QPair<int, int>, CellStatistics> cellStatistics;
+    QHash<QPair<qint64, qint64>, CellStatistics> cellStatistics;
     QVector<QColor> stateColorCache;
 
     // Ant state
-    int antX = 0, antY = 0;
+    qint64 antX = 0, antY = 0;
     int antDir = 0; // 0=up, 1=right, 2=down, 3=left
     qint64 stepCount = 0;
 
@@ -132,24 +124,24 @@ private:
 
 
     // View state
-    double offsetX = 0, offsetY = 0;
+    long double offsetX = 0, offsetY = 0;
     double zoomFactor = 1.0;
     int cellSize = 6;
 
     // Statistics state - simplified and optimized
     QPoint mostVisitedCell;
-    int maxVisits = 0;
-    int uniqueCellsCount = 0;
+    qint64 maxVisits = 0;
+    qint64 uniqueCellsCount = 0;
     bool statisticsEnabled = true;
     mutable QMutex statisticsMutex;
     QElapsedTimer simulationTimer;
 
     // Performance optimization: track recently visited cells for faster drawing
     QVector<QPoint> recentlyVisitedCells;
-    static const int RECENT_CELLS_BUFFER_SIZE = 1000;
+    static constexpr int RECENT_CELLS_BUFFER_SIZE = 1000;
 
     struct BatchData {
-        int visits = 0;
+        qint64 visits = 0;
         int corners[4] = {0, 0, 0, 0};
         qint64 firstVisitStep = -1; // Track exact step
         qint64 lastVisitStep = -1;  // Track exact step
@@ -174,16 +166,16 @@ private:
     DisplayStyle currentStyle = JustColors;
 };
 
-inline uint qHash(const QPair<int, int> &key, uint seed = 0) {
+inline uint qHash(const QPair<qint64, qint64> &key, uint seed = 0) {
     return qHash(key.first ^ (key.second << 16), seed);
 }
 
 struct AntStatisticsSummary {
     qint64 totalCellsVisited = 0;
-    int maxVisitsPerCell = 0;
+    qint64 maxVisitsPerCell = 0;
     QPoint mostVisitedCell;
     double averageVisits = 0.0;
-    int uniqueCellsVisited = 0;
+    qint64 uniqueCellsVisited = 0;
     qint64 simulationTimeMs = 0;
 };
 

@@ -3,8 +3,8 @@
 
 #include <QMainWindow>
 #include <QHash>
-#include <QPoint>
 #include "antfieldwidget.h"
+#include "QInt64SpinBox.h"
 
 // Forward declarations
 class AntFieldWidget;
@@ -24,27 +24,27 @@ public:
 
 private slots:
     void updateRules();
-    void onAntMoved(int x, int y, int direction, qint64 steps);
-    void updateStatisticsTable();
-    void takeStep();
+    void onAntMoved(qint64 x, qint64 y, int direction, qint64 steps) const;
+    void updateStatisticsTable() const;
+    void takeStep() const;
     void onQuickStepsClicked();
-    void resetSimulation();
-    void centerView();
-    void centerOnMostVisited();
+    void resetSimulation() const;
+    void centerView() const;
+    void centerOnMostVisited() const;
     void centerOnCoordinates();
-    void moveView(int dx, int dy);
-    void zoomIn();
-    void zoomOut();
-    void onZoomChanged(double zoom);
+    void moveView(qint64 dx, qint64 dy) const;
+    void zoomIn() const;
+    void zoomOut() const;
+    void onZoomChanged(double zoom) const;
     void changeCellSize();
     void loadPreset(int index);
     void showStatistics();
-    void toggleStatistics(bool enabled);
+    void toggleStatistics(bool enabled) const;
     void exportStatistics();
     void showCellDetails();
     void centerOnTableCell();
     void centerOnSelectedStatistic();
-    void onMouseOverCell(int x, int y);
+    void onMouseOverCell(qint64 x, qint64 y) const;
     void changeStyle();
 
 private:
@@ -54,28 +54,49 @@ private:
     void updateQuickStatistics() const;
 
     QHash<int, QString> presets;
-    AntFieldWidget *antField;
+    AntFieldWidget *antField{};
 
     // UI widgets
-    QLineEdit *rulesEdit;
-    QSpinBox *quickStepsSpin;
-    QPushButton *quickStepsButton;
-    QPushButton *styleButton;
-    QCheckBox *statsCheckBox;
-    QLabel *zoomLabel;
-    QLabel *stepsLabel;
-    QLabel *statsLabel;
-    QLabel *uniqueCellsLabel;
-    QLabel *mostVisitedLabel;
-    QLabel *maxVisitsLabel;
-    QLabel *averageVisitsLabel;
-    QLabel *rulesLabel;
-    QGroupBox *statsTableGroup;
-    QTableWidget *statsTable;
-    QLabel *coordinateLabel;
-    QLabel *mouseCoordinateLabel;
+    QLineEdit *rulesEdit{};
+    QInt64SpinBox* quickStepsSpin{};
+    QPushButton *quickStepsButton{};
+    QPushButton *styleButton{};
+    QCheckBox *statsCheckBox{};
+    QLabel *zoomLabel{};
+    QLabel *stepsLabel{};
+    QLabel *statsLabel{};
+    QLabel *uniqueCellsLabel{};
+    QLabel *mostVisitedLabel{};
+    QLabel *maxVisitsLabel{};
+    QLabel *averageVisitsLabel{};
+    QLabel *rulesLabel{};
+    QGroupBox *statsTableGroup{};
+    QTableWidget *statsTable{};
+    QLabel *coordinateLabel{};
+    QLabel *mouseCoordinateLabel{};
+    QPushButton *cellDetailsButton{};
+    QPushButton *statsDialogButton{};
+    QPushButton *togglePanelButton{};
+    QPushButton *rulesButton{};
+    QPushButton *stepButton{};
+    QPushButton *resetButton{};
+    QPushButton *centerButton{};
+    QPushButton *zoomOutButton;
+    QPushButton *zoomInButton;
+    QPushButton *cellSizeButton{};
+    QPushButton *centerMostVisitedButton{};
+    QPushButton *centerCoordinatesButton{};
+    QPushButton *centerTableButton{};
+    QPushButton *centerStatsButton{};
+    QPushButton *leftButton{};
+    QPushButton *upButton{};
+    QPushButton *downButton{};
+    QPushButton *rightButton{};
+    QAction *exportAction{};
+    QAction *resetStatsAction{};
+    QAction *exitAction{};
 
-    int lastCustomSteps = 1000;
+    qint64 lastCustomSteps = 1000;
     int currentStyleIndex = 0;
 };
 
