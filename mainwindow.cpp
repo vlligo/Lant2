@@ -23,6 +23,7 @@
 #include <utility>
 
 #include "antfieldwidget.h"
+#include "QPoint64.h"
 #include "QInt64SpinBox.h"
 
 MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
@@ -483,7 +484,7 @@ void MainWindow::centerView() const {
 }
 
 void MainWindow::centerOnMostVisited() const {
-    const QPoint mostVisited = antField->getMostVisitedCell();
+    const QPoint64 mostVisited = antField->getMostVisitedCell();
     antField->centerOnPoint(mostVisited);
 }
 
@@ -562,7 +563,7 @@ void MainWindow::centerOnSelectedStatistic() {
 
     const QAction* selected = menu.exec(QCursor::pos());
     if (selected) {
-        const auto point = selected->data().value<QPoint>();
+        const auto point = selected->data().value<QPoint64>();
         antField->centerOnPoint(point);
     }
 }

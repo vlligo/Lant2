@@ -10,6 +10,8 @@
 #include <QTimer>
 #include <QCursor>
 
+#include "QPoint64.h"
+
 AntFieldWidget::AntFieldWidget(QWidget *parent)
     : QWidget(parent) {
     setMinimumSize(400, 400);
@@ -57,7 +59,7 @@ void AntFieldWidget::reset() {
         QMutexLocker locker(&statisticsMutex);
         cellStatistics.clear();
         recentlyVisitedCells.clear();
-        mostVisitedCell = QPoint(0, 0);
+        mostVisitedCell = QPoint64(0, 0);
         maxVisits = 0;
         uniqueCellsCount = 0;
     }
@@ -89,11 +91,11 @@ void AntFieldWidget::nextStep(const qint64 steps) {
     setUpdatesEnabled(false);
 
     const qint64 ruleLength = rules.length();
-    static const QVector<QPoint> directions = {
-        QPoint(0, -1),  // Up
-        QPoint(1, 0),   // Right
-        QPoint(0, 1),   // Down
-        QPoint(-1, 0)   // Left
+    static const QVector<QPoint64> directions = {
+        QPoint64(0, -1),  // Up
+        QPoint64(1, 0),   // Right
+        QPoint64(0, 1),   // Down
+        QPoint64(-1, 0)   // Left
     };
 
     // Batch statistics updates for performance
@@ -150,7 +152,7 @@ void AntFieldWidget::nextStep(const qint64 steps) {
             }
         }
 
-        const QPoint &dir = directions[antDir];
+        const QPoint64 &dir = directions[antDir];
         antX += dir.x();
         antY += dir.y();
 
@@ -185,11 +187,11 @@ void AntFieldWidget::nextStep(const qint64 steps) {
 
             if (stats.visitCount > maxVisits) {
                 maxVisits = stats.visitCount;
-                mostVisitedCell = QPoint(cellKey.first, cellKey.second);
+                mostVisitedCell = QPoint64(cellKey.first, cellKey.second);
             }
 
             // Collect for recent cells (do not remove here to avoid O(N^2))
-            recentlyVisitedCells.append(QPoint(cellKey.first, cellKey.second));
+            recentlyVisitedCells.append(QPoint64(cellKey.first, cellKey.second));
         }
 
         // FIX: Optimize cleaning of recentlyVisitedCells
@@ -225,7 +227,7 @@ int AntFieldWidget::getVisitCount(qint64 x, qint64 y) const {
     return (it != cellStatistics.constEnd()) ? it->visitCount : 0;
 }
 
-QPoint AntFieldWidget::getMostVisitedCell() const {
+QPoint64 AntFieldWidget::getMostVisitedCell() const {
     QMutexLocker locker(&statisticsMutex);
     return mostVisitedCell;
 }
@@ -258,7 +260,7 @@ AntStatisticsSummary AntFieldWidget::getStatisticsSummary() const {
     return summary;
 }
 
-QVector<QPair<QPoint, qint64>> AntFieldWidget::getTopVisitedCells(const int count) const {
+QVector<QPair<QPoint64, qint64>> AntFieldWidget::getTopVisitedCells(const int count) const {
     QMutexLocker locker(&statisticsMutex);
 
     if (cellStatistics.isEmpty()) {
@@ -266,7 +268,7 @@ QVector<QPair<QPoint, qint64>> AntFieldWidget::getTopVisitedCells(const int coun
     }
 
     // Use a simple selection algorithm for top N cells (more efficient than full sort for large datasets)
-    QVector<QPair<QPoint, qint64>> result;
+    QVector<QPair<QPoint64, qint64>> result;
     result.reserve(qMin(count, cellStatistics.size()));
 
     // If count is small relative to total, use a partial sort approach
@@ -274,12 +276,12 @@ QVector<QPair<QPoint, qint64>> AntFieldWidget::getTopVisitedCells(const int coun
         // Copy first 'count' items
         auto it = cellStatistics.constBegin();
         for (int i = 0; i < count && it != cellStatistics.constEnd(); ++i, ++it) {
-            result.append(qMakePair(QPoint(it.key().first, it.key().second), it->visitCount));
+            result.append(qMakePair(QPoint64(it.key().first, it.key().second), it->visitCount));
         }
 
         // Sort and maintain top N
         std::sort(result.begin(), result.end(),
-                  [](const QPair<QPoint, qint64> &a, const QPair<QPoint, qint64> &b) {
+                  [](const QPair<QPoint64, qint64> &a, const QPair<QPoint64, qint64> &b) {
                       return a.second > b.second;
                   });
 
@@ -289,11 +291,11 @@ QVector<QPair<QPoint, qint64>> AntFieldWidget::getTopVisitedCells(const int coun
             if (visits > result.last().second) {
                 // Insert in sorted position
                 auto pos = std::lower_bound(result.begin(), result.end(), visits,
-                                            [](const QPair<QPoint, qint64> &item, qint64 value) {
+                                            [](const QPair<QPoint64, qint64> &item, qint64 value) {
                                                 return item.second > value;
                                             });
                 if (pos != result.end()) {
-                    result.insert(pos, qMakePair(QPoint(it.key().first, it.key().second), visits));
+                    result.insert(pos, qMakePair(QPoint64(it.key().first, it.key().second), visits));
                     result.removeLast();
                 }
             }
@@ -301,11 +303,11 @@ QVector<QPair<QPoint, qint64>> AntFieldWidget::getTopVisitedCells(const int coun
     } else {
         // Full sort for smaller datasets
         for (auto it = cellStatistics.constBegin(); it != cellStatistics.constEnd(); ++it) {
-            result.append(qMakePair(QPoint(it.key().first, it.key().second), it->visitCount));
+            result.append(qMakePair(QPoint64(it.key().first, it.key().second), it->visitCount));
         }
 
         std::sort(result.begin(), result.end(),
-                  [](const QPair<QPoint, int> &a, const QPair<QPoint, int> &b) {
+                  [](const QPair<QPoint64, int> &a, const QPair<QPoint64, int> &b) {
                       return a.second > b.second;
                   });
 
@@ -344,7 +346,7 @@ void AntFieldWidget::resetStatistics() {
     QMutexLocker locker(&statisticsMutex);
     cellStatistics.clear();
     recentlyVisitedCells.clear();
-    mostVisitedCell = QPoint(0, 0);
+    mostVisitedCell = QPoint64(0, 0);
     maxVisits = 0;
     uniqueCellsCount = 0;
     simulationTimer.restart();
@@ -365,16 +367,16 @@ void AntFieldWidget::setCellSize(const int size) {
 
 void AntFieldWidget::setZoom(const double zoom) {
     // Get the current center point of the widget in field coordinates
-    QPoint centerPoint = screenToField(QPoint(width() / 2, height() / 2));
+    QPoint64 centerPoint = screenToField(QPoint64(width() / 2, height() / 2));
 
     // Store the current screen position of this center point
-    QPoint oldCenterScreen = fieldToScreen(centerPoint);
+    QPoint64 oldCenterScreen = fieldToScreen(centerPoint);
 
     // Set the new zoom factor
     zoomFactor = qBound(0.00001, zoom, 50.0);
 
     // Calculate where the same field point should be on screen after zoom
-    QPoint newCenterScreen = fieldToScreen(centerPoint);
+    QPoint64 newCenterScreen = fieldToScreen(centerPoint);
 
     // Adjust offset to keep the same field point at the center
     offsetX += oldCenterScreen.x() - newCenterScreen.x();
@@ -594,16 +596,16 @@ void AntFieldWidget::redrawBuffer() {
     }
 }
 
-QPoint AntFieldWidget::screenToField(const QPoint &screenPos) const {
+QPoint64 AntFieldWidget::screenToField(const QPoint64 &screenPos) const {
     const double scaledCellSize = cellSize * zoomFactor;
-    if (qFuzzyIsNull(scaledCellSize)) return QPoint(0, 0);
-    return QPoint(qFloor((screenPos.x() - offsetX) / scaledCellSize),
+    if (qFuzzyIsNull(scaledCellSize)) return QPoint64(0, 0);
+    return QPoint64(qFloor((screenPos.x() - offsetX) / scaledCellSize),
                   qFloor((screenPos.y() - offsetY) / scaledCellSize));
 }
 
-QPoint AntFieldWidget::fieldToScreen(const QPoint &fieldPos) const {
+QPoint64 AntFieldWidget::fieldToScreen(const QPoint64 &fieldPos) const {
     const double scaledCellSize = cellSize * zoomFactor;
-    return QPoint(qRound(double(fieldPos.x() * scaledCellSize + offsetX)),
+    return QPoint64(qRound(double(fieldPos.x() * scaledCellSize + offsetX)),
                   qRound(double(fieldPos.y() * scaledCellSize + offsetY)));
 }
 
@@ -627,7 +629,7 @@ void AntFieldWidget::mouseMoveEvent(QMouseEvent *event) {
     updateMousePosition(event->pos());
 
     if (dragging && (event->buttons() & Qt::LeftButton)) {
-        QPoint delta = event->pos() - lastMousePos;
+        QPoint64 delta = event->pos() - lastMousePos;
         offsetX += delta.x();
         offsetY += delta.y();
         lastMousePos = event->pos();
@@ -656,7 +658,7 @@ void AntFieldWidget::wheelEvent(QWheelEvent *event) {
 
     if (newZoom < 0.00001 || newZoom > 50.0) return;
 
-    QPoint mousePos = event->position().toPoint();
+    QPoint64 mousePos = event->position().toPoint();
 
     double zoomRatio = newZoom / oldZoom;
 
@@ -684,12 +686,12 @@ void AntFieldWidget::centerOnPoint(qint64 x, qint64 y) {
     update();
 }
 
-void AntFieldWidget::centerOnPoint(const QPoint &point) {
+void AntFieldWidget::centerOnPoint(const QPoint64 &point) {
     centerOnPoint(point.x(), point.y());
 }
 
 void AntFieldWidget::updateMousePosition(const QPoint &pos) {
-    QPoint fieldPos = screenToField(pos);
+    QPoint64 fieldPos = screenToField(pos);
 
     // Only emit if the cell has changed
     if (fieldPos != lastMouseCellPos) {
@@ -707,6 +709,6 @@ void AntFieldWidget::enterEvent(QEnterEvent *event) {
 void AntFieldWidget::leaveEvent(QEvent *event) {
     QWidget::leaveEvent(event);
     // Clear coordinates when mouse leaves
-    lastMouseCellPos = QPoint(0, 0);
+    lastMouseCellPos = QPoint64(0, 0);
     emit mouseOverCell(0, 0);
 }

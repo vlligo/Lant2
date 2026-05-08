@@ -10,6 +10,7 @@
 #include <QElapsedTimer>
 #include <QPoint>
 #include <QTimer>
+#include "QPoint64.h"
 
 // Forward declaration
 struct AntStatisticsSummary;
@@ -50,22 +51,22 @@ public:
     // View centering methods
     void centerOnAnt();
     void centerOnPoint(qint64 x, qint64 y);
-    void centerOnPoint(const QPoint &point);
+    void centerOnPoint(const QPoint64 &point);
     void moveView(qint64 dx, qint64 dy);
 
     // Statistics methods
     int getVisitCount(qint64 x, qint64 y) const;
-    QPoint getMostVisitedCell() const;
+    QPoint64 getMostVisitedCell() const;
     qint64 getTotalVisitedCells() const;
     qint64 getUniqueVisitedCells() const;
     AntStatisticsSummary getStatisticsSummary() const;
     void exportStatisticsToCSV(const QString &filename) const;
     void resetStatistics();
     void setStatisticsEnabled(bool enabled);
-    QVector<QPair<QPoint, qint64>> getTopVisitedCells(int count) const;
+    QVector<QPair<QPoint64, qint64>> getTopVisitedCells(int count) const;
 
     // Performance optimized methods
-    QVector<QPoint> getRecentlyVisitedCells() const { return recentlyVisitedCells; }
+    QVector<QPoint64> getRecentlyVisitedCells() const { return recentlyVisitedCells; }
 
 public slots:
     void setDisplayStyle(DisplayStyle style);
@@ -75,7 +76,7 @@ signals:
     void zoomChanged(double zoom);
     void stepsChanged(qint64 steps);
     void statisticsUpdated(const AntStatisticsSummary &summary);
-    void cellVisited(const QPoint &cell, qint64 visitCount);
+    void cellVisited(const QPoint64 &cell, qint64 visitCount);
     void mouseOverCell(qint64 x, qint64 y);
 
 protected:
@@ -94,8 +95,8 @@ protected:
 
 private:
     // Coordinate conversion
-    QPoint screenToField(const QPoint &screenPos) const;
-    QPoint fieldToScreen(const QPoint &fieldPos) const;
+    QPoint64 screenToField(const QPoint64 &screenPos) const;
+    QPoint64 fieldToScreen(const QPoint64 &fieldPos) const;
 
     // Drawing and state management
     void redrawBuffer();
@@ -104,7 +105,7 @@ private:
 
 
     // Mouse position tracking
-    void updateMousePosition(const QPoint &pos);  // Add this method
+    void updateMousePosition(const QPoint& pos);  // Add this method
 
     // Performance-optimized cell storage
     QHash<QPair<qint64, qint64>, int> cells;
@@ -129,7 +130,7 @@ private:
     int cellSize = 6;
 
     // Statistics state - simplified and optimized
-    QPoint mostVisitedCell;
+    QPoint64 mostVisitedCell;
     qint64 maxVisits = 0;
     qint64 uniqueCellsCount = 0;
     bool statisticsEnabled = true;
@@ -137,7 +138,7 @@ private:
     QElapsedTimer simulationTimer;
 
     // Performance optimization: track recently visited cells for faster drawing
-    QVector<QPoint> recentlyVisitedCells;
+    QVector<QPoint64> recentlyVisitedCells;
     static constexpr int RECENT_CELLS_BUFFER_SIZE = 1000;
 
     struct BatchData {
@@ -149,10 +150,10 @@ private:
 
     // Interaction state
     bool dragging = false;
-    QPoint lastMousePos;
+    QPoint64 lastMousePos;
 
     // Mouse tracking
-    QPoint lastMouseCellPos;
+    QPoint64 lastMouseCellPos;
     QTimer *mouseUpdateTimer;  // Add this line
 
     // Rendering optimization
@@ -173,7 +174,7 @@ inline uint qHash(const QPair<qint64, qint64> &key, uint seed = 0) {
 struct AntStatisticsSummary {
     qint64 totalCellsVisited = 0;
     qint64 maxVisitsPerCell = 0;
-    QPoint mostVisitedCell;
+    QPoint64 mostVisitedCell;
     double averageVisits = 0.0;
     qint64 uniqueCellsVisited = 0;
     qint64 simulationTimeMs = 0;
