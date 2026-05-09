@@ -90,7 +90,7 @@ void QInt64SpinBox::setSuffix(const QString &suffix)
     lineEdit()->setText(textFromValue(m_value));
 }
 
-void QInt64SpinBox::stepBy(const qint64 steps)
+void QInt64SpinBox::stepBy(const int steps)
 {
     if (steps == 0)
         return;

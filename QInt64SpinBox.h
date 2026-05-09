@@ -39,7 +39,7 @@ public:
         void valueChanged(qint64 value);
 
 protected:
-    void stepBy(qint64 steps);
+    void stepBy(int steps);
     [[nodiscard]] StepEnabled stepEnabled() const override;
 
     // Handling of manually typed text
