@@ -116,9 +116,11 @@ QValidator::State QInt64SpinBox::validate(QString &input, int &pos) const
     // Remove suffix if present (case‑sensitive)
     if (!m_suffix.isEmpty() && text.endsWith(m_suffix))
         text.chop(m_suffix.length());
+    else if (!m_suffix.isEmpty())
+        return QValidator::Invalid;
 
     bool ok;
-    qint64 val = text.toLongLong(&ok);
+    qint64 val = text.remove(QLocale().groupSeparator()).toLongLong(&ok);
     if (!ok)
         return QValidator::Invalid;
     if (val < m_minimum || val > m_maximum)
@@ -135,7 +137,7 @@ void QInt64SpinBox::fixup(QString &input) const
     text = text.trimmed();
 
     bool ok;
-    qint64 val = text.toLongLong(&ok);
+    qint64 val = text.remove(QLocale().groupSeparator()).toLongLong(&ok);
     if (!ok)
         val = m_minimum;
     else
@@ -148,7 +150,7 @@ QString QInt64SpinBox::textFromValue(qint64 val) const
 {
     if (m_suffix.isEmpty())
         return QString::number(val);
-    return QString::number(val) + m_suffix;
+    return QLocale().toString(val) + m_suffix;
 }
 
 qint64 QInt64SpinBox::valueFromText(const QString &text) const
@@ -156,7 +158,7 @@ qint64 QInt64SpinBox::valueFromText(const QString &text) const
     QString t = text.trimmed();
     if (!m_suffix.isEmpty() && t.endsWith(m_suffix))
         t.chop(m_suffix.length());
-    return t.toLongLong();
+    return t.remove(QLocale().groupSeparator()).toLongLong();
 }
 
 void QInt64SpinBox::onEditingFinished()
