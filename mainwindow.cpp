@@ -626,8 +626,8 @@ void MainWindow::showStatistics() {
         const auto& cell = topCells[i];
         statsText += QString("%1. (%2, %3): %4 visits\n")
                          .arg(i + 1)
-                         .arg(QLocale().toString(cell.first.x()), QLocale().toString((cell.first.y()))
-                         .arg(QLocale().toString(cell.second)));
+                         .arg(QLocale().toString(cell.first.x()), QLocale().toString((cell.first.y())))
+                         .arg(QLocale().toString(cell.second));
     }
 
     QMessageBox::information(this, "Detailed Statistics", statsText);
