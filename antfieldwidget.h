@@ -8,9 +8,57 @@
 #include <QVector>
 #include <QMutex>
 #include <QElapsedTimer>
-#include <QPoint>
 #include <QTimer>
 #include "QPoint64.h"
+#include <unordered_map>
+#include <vector>
+#include <memory>
+
+
+struct ChunkKey {
+    int64_t cx, cy;
+    bool operator==(const ChunkKey& o) const { return cx == o.cx && cy == o.cy; }
+};
+
+struct ChunkKeyHash {
+    std::size_t operator()(const ChunkKey& k) const {
+        uint64_t h = 0xcbf29ce484222325ULL;
+        h ^= static_cast<uint64_t>(k.cx); h *= 0x100000001b3ULL;
+        h ^= static_cast<uint64_t>(k.cy); h *= 0x100000001b3ULL;
+        return static_cast<std::size_t>(h);
+    }
+};
+
+// --- Architecture Constants ---
+constexpr int CHUNK_SHIFT = 6;              // 2^6 = 64
+constexpr int64_t CHUNK_SIZE = (1<<CHUNK_SHIFT);
+constexpr int64_t CHUNK_MASK = CHUNK_SIZE - 1;
+constexpr int CHUNK_AREA = CHUNK_SIZE * CHUNK_SIZE;
+
+
+// --- Chunk Structures ---
+// We use uint32_t for state to comfortably hold thousands of rules, avoiding int8_t limits
+struct Chunk {
+    uint32_t states[CHUNK_AREA] = {0};
+};
+
+struct StatChunk {
+    uint32_t visits[CHUNK_AREA] = {0};
+    uint32_t corners[CHUNK_AREA][4] = {0};
+    int64_t firstVisitStep[CHUNK_AREA];
+    int64_t lastVisitStep[CHUNK_AREA] = {0};
+
+    StatChunk() {
+        std::fill_n(firstVisitStep, CHUNK_AREA, -1);
+    }
+};
+
+// Now the compiler knows how to delete them
+inline std::unordered_map<ChunkKey, std::unique_ptr<Chunk>, ChunkKeyHash> chunks;
+inline std::unordered_map<ChunkKey, std::unique_ptr<StatChunk>, ChunkKeyHash> statChunks;
+
+inline std::vector<uint32_t> nextStateLUT;
+inline std::vector<int> directionChangeLUT;
 
 // Forward declaration
 struct AntStatisticsSummary;
@@ -108,10 +156,10 @@ private:
     void updateMousePosition(const QPoint& pos);  // Add this method
 
     // Performance-optimized cell storage
-    QHash<QPair<qint64, qint64>, int> cells;
+    // QHash<QPair<qint64, qint64>, int> cells;
 
     // Optimized statistics: use QMap for ordered access when needed
-    QHash<QPair<qint64, qint64>, CellStatistics> cellStatistics;
+    // QHash<QPair<qint64, qint64>, CellStatistics> cellStatistics;
     QVector<QColor> stateColorCache;
 
     // Ant state
@@ -167,9 +215,9 @@ private:
     DisplayStyle currentStyle = JustColors;
 };
 
-inline uint qHash(const QPair<qint64, qint64> &key, uint seed = 0) {
-    return qHash(key.first ^ (key.second << 16), seed);
-}
+// inline uint qHash(const QPair<qint64, qint64> &key, uint seed = 0) {
+//     return qHash(key.first ^ (key.second << 16), seed);
+// }
 
 struct AntStatisticsSummary {
     qint64 totalCellsVisited = 0;

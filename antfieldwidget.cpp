@@ -12,15 +12,33 @@
 
 #include "QPoint64.h"
 
+// // --- Architecture Constants ---
+
+// Direction Vectors: 0=Up, 1=Right, 2=Down, 3=Left
+struct Vec2 { int64_t x, y; };
+static constexpr Vec2 DIRECTIONS[4] = {
+    {0, -1}, {1, 0}, {0, 1}, {-1, 0}
+};
+
+// Branchless Corner Lookup Table
+// Index = (entrySide << 2) | exitSide. Returns corner 0-3, or -1 if no corner.
+static constexpr int CORNER_LUT[16] = {
+    -1,  1, -1,  0,  // entry 0 (Top)
+     1, -1,  2, -1,  // entry 1 (Right)
+    -1,  2, -1,  3,  // entry 2 (Bottom)
+     0, -1,  3, -1   // entry 3 (Left)
+};
+
+// --- Implementation ---
+
 AntFieldWidget::AntFieldWidget(QWidget *parent)
     : QWidget(parent) {
     setMinimumSize(400, 400);
     setMouseTracking(true);
     reset();
 
-    // Mouse update timer for smoother coordinate updates
     mouseUpdateTimer = new QTimer(this);
-    mouseUpdateTimer->setInterval(50);  // Update every 50ms
+    mouseUpdateTimer->setInterval(50);
     connect(mouseUpdateTimer, &QTimer::timeout, [this]() {
         if (underMouse()) {
             updateMousePosition(mapFromGlobal(QCursor::pos()));
@@ -30,15 +48,26 @@ AntFieldWidget::AntFieldWidget(QWidget *parent)
 }
 
 AntFieldWidget::~AntFieldWidget() {
-    cells.clear();
-    cellStatistics.clear();
+    chunks.clear();
+    statChunks.clear();
     stateColorCache.clear();
-    recentlyVisitedCells.clear();
 }
 
-void AntFieldWidget::setRules(const QString &rules) {
-    this->rules = rules.trimmed().toUpper();
+void AntFieldWidget::setRules(const QString &rules_str) {
+    this->rules = rules_str.trimmed().toUpper();
     updateStateColors();
+
+    // Pre-compile branchless lookup tables (LUTs) for extreme speed
+    const uint32_t ruleLength = rules.length();
+    nextStateLUT.resize(ruleLength);
+    directionChangeLUT.resize(ruleLength);
+
+    for (uint32_t i = 0; i < ruleLength; ++i) {
+        nextStateLUT[i] = (i + 1) % ruleLength;
+        QChar rule = rules.at(i);
+        directionChangeLUT[i] = (rule == 'L') ? 3 : 1; // +3 is mathematically equivalent to -1 (Left) in modulo 4
+    }
+
     reset();
 }
 
@@ -54,11 +83,10 @@ void AntFieldWidget::updateStateColors() {
 }
 
 void AntFieldWidget::reset() {
-    cells.clear();
+    chunks.clear();
     if (statisticsEnabled) {
         QMutexLocker locker(&statisticsMutex);
-        cellStatistics.clear();
-        recentlyVisitedCells.clear();
+        statChunks.clear();
         mostVisitedCell = QPoint64(0, 0);
         maxVisits = 0;
         uniqueCellsCount = 0;
@@ -70,13 +98,10 @@ void AntFieldWidget::reset() {
     minX = minY = -50;
     maxX = maxY = 50;
 
-    // Center view
     offsetX = width() / 2.0;
     offsetY = height() / 2.0;
 
-    // Start/restart simulation timer
     simulationTimer.restart();
-
     needsRedraw = true;
     update();
 
@@ -86,122 +111,88 @@ void AntFieldWidget::reset() {
 
 void AntFieldWidget::nextStep(const qint64 steps) {
     if (rules.isEmpty() || steps <= 0) return;
-
-    // Performance: batch updates
     setUpdatesEnabled(false);
 
-    const qint64 ruleLength = rules.length();
-    static const QVector<QPoint64> directions = {
-        QPoint64(0, -1),  // Up
-        QPoint64(1, 0),   // Right
-        QPoint64(0, 1),   // Down
-        QPoint64(-1, 0)   // Left
+    // Helper for safe chunk index (floor division) and local index.
+    auto chunkIndex = [&](int64_t coord) -> int64_t {
+        // C++ division truncates toward zero → adjust for negatives
+        int64_t ci = coord / CHUNK_SIZE;
+        if (coord < 0 && (coord & CHUNK_MASK) != 0) --ci;
+        return ci;
     };
 
-    // Batch statistics updates for performance
-    struct LocalBatchData {
-        qint64 visits = 0;
-        qint64 corners[4] = {0, 0, 0, 0};
-        qint64 firstVisitStep = -1;
-        qint64 lastVisitStep = -1;
-    };
-    QHash<QPair<qint64, qint64>, LocalBatchData> batchUpdates;
+    // Compute starting chunk
+    int64_t cx = chunkIndex(antX);
+    int64_t cy = chunkIndex(antY);
+    ChunkKey currentKey{cx, cy};
 
-    for (qint64 s = 0; s < steps; ++s) {
-        QPair<qint64, qint64> cellKey(antX, antY);
-        int &currentState = cells[cellKey];
-        int oldDir = antDir;
+    Chunk* currentChunk = nullptr;
+    StatChunk* currentStatChunk = nullptr;
 
-        // Logic
-        if (currentState < ruleLength) {
-            QChar rule = rules.at(currentState);
-            currentState = (currentState + 1) % ruleLength;
-            switch (rule.unicode()) {
-            case 'L': antDir = (antDir + 3) % 4; break;
-            case 'R': antDir = (antDir + 1) % 4; break;
-            }
-        }
-
-        // Corner Logic
-        int entrySide = (oldDir + 2) % 4;
-        int exitSide = antDir;
-        int cornerIndex = -1;
-
-        bool hasTop = (entrySide == 0 || exitSide == 0);
-        bool hasRight = (entrySide == 1 || exitSide == 1);
-        bool hasBottom = (entrySide == 2 || exitSide == 2);
-        bool hasLeft = (entrySide == 3 || exitSide == 3);
-
-        if (hasTop && hasLeft) cornerIndex = 0;
-        else if (hasTop && hasRight) cornerIndex = 1;
-        else if (hasBottom && hasRight) cornerIndex = 2;
-        else if (hasBottom && hasLeft) cornerIndex = 3;
-
-        qint64 currentStepVal = stepCount + 1;
+    auto fetchChunks = [&]() {
+        auto& chunkPtr = chunks[currentKey];
+        if (!chunkPtr) chunkPtr = std::make_unique<Chunk>(Chunk{}); // zero-initialise
+        currentChunk = chunkPtr.get();
 
         if (statisticsEnabled) {
-            LocalBatchData &data = batchUpdates[cellKey];
-            data.visits++;
-            if (data.firstVisitStep == -1) {
-                data.firstVisitStep = currentStepVal;
-            }
-            data.lastVisitStep = currentStepVal; // Always update last visit to current
+            QMutexLocker locker(&statisticsMutex);
+            auto& statPtr = statChunks[currentKey];
+            if (!statPtr) statPtr = std::make_unique<StatChunk>(StatChunk{}); // zero-initialise
+            currentStatChunk = statPtr.get();
+        }
+    };
+    fetchChunks();
 
-            if (cornerIndex != -1) {
-                data.corners[cornerIndex]++;
+    for (qint64 s = 0; s < steps; ++s) {
+        int64_t newCx = chunkIndex(antX);
+        int64_t newCy = chunkIndex(antY);
+
+        if (newCx != currentKey.cx || newCy != currentKey.cy) {
+            currentKey = {newCx, newCy};
+            fetchChunks();
+        }
+
+        // local index now computed from chunk index (always 0 … CHUNK_SIZE-1)
+        int64_t lx = antX - currentKey.cx * CHUNK_SIZE;
+        int64_t ly = antY - currentKey.cy * CHUNK_SIZE;
+        int localIndex = (ly << CHUNK_SHIFT) | lx;
+
+        uint32_t& state = currentChunk->states[localIndex];
+        int oldDir = antDir;
+
+        if (state < nextStateLUT.size()) {
+            antDir = (antDir + directionChangeLUT[state]) & 3;
+            state = nextStateLUT[state];
+        }
+
+        // Statistics update (unchanged, but now safely zero-initialised)
+        if (statisticsEnabled && currentStatChunk) {
+            currentStatChunk->visits[localIndex]++;
+
+            if (currentStatChunk->firstVisitStep[localIndex] == -1) {
+                currentStatChunk->firstVisitStep[localIndex] = stepCount + 1;
+                ++uniqueCellsCount;
+            }
+            currentStatChunk->lastVisitStep[localIndex] = stepCount + 1;
+
+            if (currentStatChunk->visits[localIndex] > maxVisits) {
+                maxVisits = currentStatChunk->visits[localIndex];
+                mostVisitedCell = QPoint64(antX, antY);
+            }
+
+            int entrySide = (oldDir + 2) & 3;
+            int cornerIndex = CORNER_LUT[(entrySide << 2) | antDir];
+            if (cornerIndex >= 0 && cornerIndex < 4) {
+                currentStatChunk->corners[localIndex][cornerIndex]++;
             }
         }
 
-        const QPoint64 &dir = directions[antDir];
-        antX += dir.x();
-        antY += dir.y();
+        antX += DIRECTIONS[antDir].x;
+        antY += DIRECTIONS[antDir].y;
 
-        if (antX < minX) minX = antX;
-        if (antX > maxX) maxX = antX;
-        if (antY < minY) minY = antY;
-        if (antY > maxY) maxY = antY;
-
-        stepCount++;
-    }
-
-    // Apply batched statistics updates
-    if (statisticsEnabled && !batchUpdates.isEmpty()) {
-        QMutexLocker locker(&statisticsMutex);
-
-        for (auto it = batchUpdates.constBegin(); it != batchUpdates.constEnd(); ++it) {
-            QPair<qint64, qint64> cellKey = it.key();
-            const LocalBatchData &data = it.value();
-            CellStatistics &stats = cellStatistics[cellKey];
-
-            if (stats.visitCount == 0) {
-                stats.firstVisitStep = data.firstVisitStep;
-                uniqueCellsCount++;
-            }
-
-            stats.visitCount += data.visits;
-            stats.lastVisitStep = data.lastVisitStep;
-
-            for (int i = 0; i < 4; i++) {
-                stats.cornerCounts[i] += data.corners[i];
-            }
-
-            if (stats.visitCount > maxVisits) {
-                maxVisits = stats.visitCount;
-                mostVisitedCell = QPoint64(cellKey.first, cellKey.second);
-            }
-
-            // Collect for recent cells (do not remove here to avoid O(N^2))
-            recentlyVisitedCells.append(QPoint64(cellKey.first, cellKey.second));
-        }
-
-        // FIX: Optimize cleaning of recentlyVisitedCells
-        if (recentlyVisitedCells.size() > RECENT_CELLS_BUFFER_SIZE) {
-            // Keep only the last RECENT_CELLS_BUFFER_SIZE elements
-            // This is still O(N) but called once per batch, not per cell
-            recentlyVisitedCells = recentlyVisitedCells.mid(
-                recentlyVisitedCells.size() - RECENT_CELLS_BUFFER_SIZE
-                );
-        }
+        if (antX < minX) minX = antX; else if (antX > maxX) maxX = antX;
+        if (antY < minY) minY = antY; else if (antY > maxY) maxY = antY;
+        ++stepCount;
     }
 
     setUpdatesEnabled(true);
@@ -222,9 +213,14 @@ void AntFieldWidget::setDisplayStyle(DisplayStyle style) {
 }
 
 int AntFieldWidget::getVisitCount(qint64 x, qint64 y) const {
+    if (!statisticsEnabled) return 0;
     QMutexLocker locker(&statisticsMutex);
-    auto it = cellStatistics.constFind(QPair<qint64, qint64>(x, y));
-    return (it != cellStatistics.constEnd()) ? it->visitCount : 0;
+    ChunkKey key = { x >> CHUNK_SHIFT, y >> CHUNK_SHIFT };
+    auto it = statChunks.find(key);
+    if (it != statChunks.end()) {
+        return it->second->visits[((y & CHUNK_MASK) << CHUNK_SHIFT) | (x & CHUNK_MASK)];
+    }
+    return 0;
 }
 
 QPoint64 AntFieldWidget::getMostVisitedCell() const {
@@ -262,94 +258,67 @@ AntStatisticsSummary AntFieldWidget::getStatisticsSummary() const {
 
 QVector<QPair<QPoint64, qint64>> AntFieldWidget::getTopVisitedCells(const int count) const {
     QMutexLocker locker(&statisticsMutex);
+    if (statChunks.empty()) return {};
 
-    if (cellStatistics.isEmpty()) {
-        return {};
-    }
+    QVector<QPair<QPoint64, qint64>> allCells;
 
-    // Use a simple selection algorithm for top N cells (more efficient than full sort for large datasets)
-    QVector<QPair<QPoint64, qint64>> result;
-    result.reserve(qMin(count, cellStatistics.size()));
-
-    // If count is small relative to total, use a partial sort approach
-    if (count * 10 < cellStatistics.size()) {
-        // Copy first 'count' items
-        auto it = cellStatistics.constBegin();
-        for (int i = 0; i < count && it != cellStatistics.constEnd(); ++i, ++it) {
-            result.append(qMakePair(QPoint64(it.key().first, it.key().second), it->visitCount));
-        }
-
-        // Sort and maintain top N
-        std::sort(result.begin(), result.end(),
-                  [](const QPair<QPoint64, qint64> &a, const QPair<QPoint64, qint64> &b) {
-                      return a.second > b.second;
-                  });
-
-        // Process remaining items
-        for (; it != cellStatistics.constEnd(); ++it) {
-            qint64 visits = it->visitCount;
-            if (visits > result.last().second) {
-                // Insert in sorted position
-                auto pos = std::lower_bound(result.begin(), result.end(), visits,
-                                            [](const QPair<QPoint64, qint64> &item, qint64 value) {
-                                                return item.second > value;
-                                            });
-                if (pos != result.end()) {
-                    result.insert(pos, qMakePair(QPoint64(it.key().first, it.key().second), visits));
-                    result.removeLast();
-                }
+    // Flatten chunks into a single list for sorting
+    for (const auto& [key, statChunk] : statChunks) {
+        for (int i = 0; i < CHUNK_AREA; ++i) {
+            if (statChunk->visits[i] > 0) {
+                int64_t lx = i % CHUNK_SIZE;
+                int64_t ly = i / CHUNK_SIZE;
+                int64_t gx = (key.cx << CHUNK_SHIFT) + lx;
+                int64_t gy = (key.cy << CHUNK_SHIFT) + ly;
+                allCells.append({{gx, gy}, (qint64)statChunk->visits[i]});
             }
         }
-    } else {
-        // Full sort for smaller datasets
-        for (auto it = cellStatistics.constBegin(); it != cellStatistics.constEnd(); ++it) {
-            result.append(qMakePair(QPoint64(it.key().first, it.key().second), it->visitCount));
-        }
-
-        std::sort(result.begin(), result.end(),
-                  [](const QPair<QPoint64, int> &a, const QPair<QPoint64, int> &b) {
-                      return a.second > b.second;
-                  });
-
-        if (result.size() > count) {
-            result.resize(count);
-        }
     }
 
-    return result;
+    // Partial sort is much faster for "Top N"
+    int sortLimit = std::min((int)allCells.size(), count);
+    std::partial_sort(allCells.begin(), allCells.begin() + sortLimit, allCells.end(),
+                     [](const auto& a, const auto& b) { return a.second > b.second; });
+
+    if (allCells.size() > count) allCells.resize(count);
+    return allCells;
 }
 
 void AntFieldWidget::exportStatisticsToCSV(const QString &filename) const {
     QMutexLocker locker(&statisticsMutex);
-
     QFile file(filename);
     if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
         qWarning() << "Failed to open file for writing:" << filename;
         return;
     }
-
     QTextStream out(&file);
     out << "X,Y,VisitCount,FirstVisitStep,LastVisitStep\n";
 
-    for (auto it = cellStatistics.constBegin(); it != cellStatistics.constEnd(); ++it) {
-        out << it.key().first << ","
-            << it.key().second << ","
-            << it->visitCount << ","
-            << it->firstVisitStep << ","
-            << it->lastVisitStep << "\n";
+    for (const auto& [key, statChunk] : statChunks) {
+        for (int i = 0; i < CHUNK_AREA; ++i) {
+            if (statChunk->visits[i] > 0) {
+                // reconstruct using chunk coordinates (safe, no bit‑shift assumptions)
+                int64_t gx = (key.cx * CHUNK_SIZE) + (i % CHUNK_SIZE);
+                int64_t gy = (key.cy * CHUNK_SIZE) + (i / CHUNK_SIZE);
+                out << gx << "," << gy << ","
+                    << statChunk->visits[i] << ","
+                    << statChunk->firstVisitStep[i] << ","
+                    << statChunk->lastVisitStep[i] << "\n";
+            }
+        }
     }
-
     file.close();
 }
 
 void AntFieldWidget::resetStatistics() {
     QMutexLocker locker(&statisticsMutex);
-    cellStatistics.clear();
-    recentlyVisitedCells.clear();
+    statChunks.clear(); // This is the real data store
     mostVisitedCell = QPoint64(0, 0);
     maxVisits = 0;
     uniqueCellsCount = 0;
     simulationTimer.restart();
+    needsRedraw = true;
+    update();
 }
 
 void AntFieldWidget::setStatisticsEnabled(const bool enabled) {
@@ -423,53 +392,61 @@ void AntFieldWidget::redrawBuffer() {
 
     const long double scaledCellSize = cellSize * zoomFactor;
 
-    // Calculate visible bounds
     const qint64 startX = qFloor((-offsetX) / scaledCellSize) - 1;
-    const qint64 endX = qCeil((width() - offsetX) / scaledCellSize) + 1;
+    const qint64 endX   = qCeil((width() - offsetX) / scaledCellSize) + 1;
     const qint64 startY = qFloor((-offsetY) / scaledCellSize) - 1;
-    const qint64 endY = qCeil((height() - offsetY) / scaledCellSize) + 1;
+    const qint64 endY   = qCeil((height() - offsetY) / scaledCellSize) + 1;
 
-    // --- Drawing Optimization ---
-    const qint64 viewWidth = endX - startX;
-    const qint64 viewHeight = endY - startY;
-    const qint64 viewportCellCount = (viewWidth > 0 && viewHeight > 0 && viewWidth > LLONG_MAX / viewHeight) ? LLONG_MAX : viewWidth * viewHeight;
+    // Safe floor division helper
+    auto chunkIndex = [&](qint64 coord) -> int64_t {
+        int64_t ci = coord / CHUNK_SIZE;
+        if (coord < 0 && (coord & CHUNK_MASK) != 0) --ci;
+        return ci;
+    };
 
-    bool useOptimizedDrawing = (scaledCellSize < 1.0) && (viewportCellCount > cells.size());
+    const int64_t startCX = chunkIndex(startX);
+    const int64_t endCX   = chunkIndex(endX);
+    const int64_t startCY = chunkIndex(startY);
+    const int64_t endCY   = chunkIndex(endY);
+
+    bool useOptimizedDrawing = (scaledCellSize < 1.0);
 
     if (useOptimizedDrawing) {
-        // Optimized path for high zoom-out:
-        // Render to a QImage first to ensure one cell state per pixel.
         QImage image(size(), QImage::Format_ARGB32);
         image.fill(Qt::white);
-
         auto pixels = reinterpret_cast<QRgb*>(image.bits());
         int imageWidth = image.width();
         int imageHeight = image.height();
 
-        // Create a cache of QRgb colors for performance
         QVector<QRgb> rgbColorCache;
-        rgbColorCache.reserve(stateColorCache.size());
-        for (const QColor &color : stateColorCache) {
-            rgbColorCache.append(color.rgb());
-        }
-        if (rgbColorCache.isEmpty()) {
-             rgbColorCache.append(QColor::fromHsv(0, 200, 230).rgb());
-        }
+        for (const QColor &c : stateColorCache) rgbColorCache.append(c.rgb());
+        if (rgbColorCache.isEmpty()) rgbColorCache.append(QColor::fromHsv(0, 200, 230).rgb());
 
-        for (auto it = cells.constBegin(); it != cells.constEnd(); ++it) {
-            const int state = it.value();
-            if (state > 0) {
-                const qint64 cellX = it.key().first;
-                const qint64 cellY = it.key().second;
+        // Screen-Space Chunk Culling: Only loop over chunks actively visible on screen
+        for (int64_t cy = startCY; cy <= endCY; ++cy) {
+            for (int64_t cx = startCX; cx <= endCX; ++cx) {
+                ChunkKey key = {cx, cy};
+                auto it = chunks.find(key);
+                if (it == chunks.end()) continue; // Skip massive 64x64 empty voids instantly
 
-                qint64 screenX = qFloor(offsetX + cellX * scaledCellSize);
-                qint64 screenY = qFloor(offsetY + cellY * scaledCellSize);
+                Chunk* chunk = it->second.get();
+                for (int ly = 0; ly < CHUNK_SIZE; ++ly) {
+                    for (int lx = 0; lx < CHUNK_SIZE; ++lx) {
+                        uint32_t state = chunk->states[(ly << CHUNK_SHIFT) | lx];
+                        if (state > 0) {
+                            int64_t globalX = (cx << CHUNK_SHIFT) + lx;
+                            int64_t globalY = (cy << CHUNK_SHIFT) + ly;
 
-                if (screenX >= 0 && screenX < imageWidth && screenY >= 0 && screenY < imageHeight) {
-                    qint64 pixelIndex = screenY * imageWidth + screenX;
-                    // "First come, first served" for a given pixel
-                    if (pixels[pixelIndex] == 0xFFFFFFFF) { // Check for white
-                        pixels[pixelIndex] = rgbColorCache[state % rgbColorCache.size()];
+                            qint64 screenX = qFloor(offsetX + globalX * scaledCellSize);
+                            qint64 screenY = qFloor(offsetY + globalY * scaledCellSize);
+
+                            if (screenX >= 0 && screenX < imageWidth && screenY >= 0 && screenY < imageHeight) {
+                                qint64 pixelIndex = screenY * imageWidth + screenX;
+                                if (pixels[pixelIndex] == 0xFFFFFFFF) {
+                                    pixels[pixelIndex] = rgbColorCache[state % rgbColorCache.size()];
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -477,8 +454,7 @@ void AntFieldWidget::redrawBuffer() {
         painter.drawImage(0, 0, image);
 
     } else {
-        // Default path for zoom-in: Iterate over the visible grid
-        // Draw grid if cells are large enough
+        // Render grid
         if (scaledCellSize >= 4) {
             painter.setPen(QPen(QColor(220, 220, 220), 0.5));
             for (qint64 x = startX; x <= endX; ++x) {
@@ -491,88 +467,117 @@ void AntFieldWidget::redrawBuffer() {
             }
         }
 
-        // Draw cell colors
-        for (qint64 y = startY; y <= endY; ++y) {
-            for (qint64 x = startX; x <= endX; ++x) {
-                auto it = cells.constFind({x, y});
-                if (it != cells.constEnd()) {
-                    int state = it.value();
-                    QColor color = (state > 0) ? stateToColor(state) : Qt::white;
-                    long double screenX = offsetX + x * scaledCellSize;
-                    long double screenY = offsetY + y * scaledCellSize;
-                    painter.fillRect(QRectF(screenX, screenY, scaledCellSize, scaledCellSize), color);
+        // Draw visible chunks only
+        for (int64_t cy = startCY; cy <= endCY; ++cy) {
+            for (int64_t cx = startCX; cx <= endCX; ++cx) {
+                ChunkKey key = {cx, cy};
+                auto it = chunks.find(key);
+                if (it == chunks.end()) continue;
+
+                Chunk* chunk = it->second.get();
+                for (int ly = 0; ly < CHUNK_SIZE; ++ly) {
+                    for (int lx = 0; lx < CHUNK_SIZE; ++lx) {
+                        uint32_t state = chunk->states[(ly << CHUNK_SHIFT) | lx];
+                        if (state > 0) {
+                            int64_t globalX = (cx << CHUNK_SHIFT) + lx;
+                            int64_t globalY = (cy << CHUNK_SHIFT) + ly;
+
+                            if (globalX >= startX && globalX <= endX && globalY >= startY && globalY <= endY) {
+                                QColor color = stateToColor(state);
+                                long double screenX = offsetX + globalX * scaledCellSize;
+                                long double screenY = offsetY + globalY * scaledCellSize;
+                                painter.fillRect(QRectF(screenX, screenY, scaledCellSize, scaledCellSize), color);
+                            }
+                        }
+                    }
                 }
             }
         }
     }
 
+    // --- Rewritten Statistics Overlay for Chunked Architecture ---
 
-    // Draw statistics overlay (only when zoomed in enough)
-    if (!useOptimizedDrawing && statisticsEnabled && scaledCellSize >= 8 && currentStyle != JustColors) {
-        QMutexLocker locker(&statisticsMutex);
-        painter.setPen(Qt::black);
+if (!useOptimizedDrawing && statisticsEnabled && scaledCellSize >= 8 && currentStyle != JustColors) {
+    QMutexLocker locker(&statisticsMutex);
+    painter.setPen(Qt::black);
 
-        for (qint64 y = startY; y <= endY; ++y) {
-            for (qint64 x = startX; x <= endX; ++x) {
-                auto statIt = cellStatistics.constFind({x, y});
-                if (statIt == cellStatistics.constEnd()) continue;
+    // Reuse the chunk bounds calculated earlier in redrawBuffer()
+    for (int64_t cy = startCY; cy <= endCY; ++cy) {
+        for (int64_t cx = startCX; cx <= endCX; ++cx) {
+            auto it = statChunks.find({cx, cy});
+            if (it == statChunks.end()) continue; // Skip empty chunks
 
-                QRectF cellRect(offsetX + x * scaledCellSize, offsetY + y * scaledCellSize, scaledCellSize, scaledCellSize);
-                QString text = QString::number(statIt->visitCount);
+            StatChunk* statChunk = it->second.get();
+
+            for (int i = 0; i < CHUNK_AREA; ++i) {
+                if (statChunk->visits[i] == 0) continue;
+
+                // Convert local chunk index back to global field coordinates
+                int64_t gx = (cx << CHUNK_SHIFT) + (i % CHUNK_SIZE);
+                int64_t gy = (cy << CHUNK_SHIFT) + (i / CHUNK_SIZE);
+
+                // Calculate screen position
+                QRectF cellRect(offsetX + gx * scaledCellSize,
+                               offsetY + gy * scaledCellSize,
+                               scaledCellSize, scaledCellSize);
 
                 if (currentStyle == Visits) {
+                    QString text = QString::number(statChunk->visits[i]);
+
+                    // Dynamic Font Scaling
                     QFont font = painter.font();
                     font.setPointSizeF(1);
                     painter.setFont(font);
                     QRectF textRect = painter.fontMetrics().boundingRect(text);
 
-                    long double scaleX = (cellRect.width() * 0.9) / textRect.width();
-                    long double scaleY = (cellRect.height() * 0.9) / textRect.height();
-                    long double scale = qMin(scaleX, scaleY);
+                    double scale = qMin((cellRect.width() * 0.8) / textRect.width(),
+                                        (cellRect.height() * 0.8) / textRect.height());
 
-                    font.setPointSizeF(font.pointSizeF() * scale);
+                    font.setPointSizeF(qMax(1.0, scale)); // Ensure readable size
                     painter.setFont(font);
-
                     painter.drawText(cellRect, Qt::AlignCenter, text);
+
                 } else if (currentStyle == Rotations) {
-                    auto drawCornerText = [&](const QRectF &rect, const int value, const Qt::Alignment align) {
-                        if (value <= 0) return;
+                    auto drawCornerText = [&](const QRectF &rect, uint32_t value, Qt::Alignment align) {
+                        if (value == 0) return;
+
                         QString cur_text = QString::number(value);
-                        QRectF cornerRect = rect;
-                        cornerRect.setWidth(rect.width() / 2);
-                        cornerRect.setHeight(rect.height() / 2);
+                        QRectF cornerRect(0, 0, rect.width() / 2, rect.height() / 2);
+
                         if (align & Qt::AlignRight) cornerRect.moveLeft(rect.center().x());
+                        else cornerRect.moveLeft(rect.left());
+
                         if (align & Qt::AlignBottom) cornerRect.moveTop(rect.center().y());
+                        else cornerRect.moveTop(rect.top());
 
                         QFont font = painter.font();
                         font.setPointSizeF(1);
                         painter.setFont(font);
-                        const QRectF textRect = painter.fontMetrics().boundingRect(cur_text);
+                        QRectF textRect = painter.fontMetrics().boundingRect(cur_text);
 
-                        const long double scaleX = (cornerRect.width() * 0.9) / textRect.width();
-                        const long double scaleY = (cornerRect.height() * 0.9) / textRect.height();
-                        const long double scale = qMin(scaleX, scaleY);
+                        double scale = qMin((cornerRect.width() * 0.85) / textRect.width(),
+                                            (cornerRect.height() * 0.85) / textRect.height());
 
-                        font.setPointSizeF(font.pointSizeF() * scale);
+                        font.setPointSizeF(qMax(1.0, scale));
                         painter.setFont(font);
-
                         painter.drawText(cornerRect, Qt::AlignCenter, cur_text);
                     };
 
-                    drawCornerText(cellRect, statIt->cornerCounts[0], Qt::AlignLeft | Qt::AlignTop);
-                    drawCornerText(cellRect, statIt->cornerCounts[1], Qt::AlignRight | Qt::AlignTop);
-                    drawCornerText(cellRect, statIt->cornerCounts[2], Qt::AlignRight | Qt::AlignBottom);
-                    drawCornerText(cellRect, statIt->cornerCounts[3], Qt::AlignLeft | Qt::AlignBottom);
+                    // Draw the 4 corner counters from our statChunk array
+                    drawCornerText(cellRect, statChunk->corners[i][0], Qt::AlignLeft | Qt::AlignTop);
+                    drawCornerText(cellRect, statChunk->corners[i][1], Qt::AlignRight | Qt::AlignTop);
+                    drawCornerText(cellRect, statChunk->corners[i][2], Qt::AlignRight | Qt::AlignBottom);
+                    drawCornerText(cellRect, statChunk->corners[i][3], Qt::AlignLeft | Qt::AlignBottom);
                 }
             }
         }
     }
+}
 
     // Draw ant
     const long double antScreenX = offsetX + antX * scaledCellSize;
     const long double antScreenY = offsetY + antY * scaledCellSize;
-    const QPointF antCenter(antScreenX + scaledCellSize / 2,
-                            antScreenY + scaledCellSize / 2);
+    const QPointF antCenter(antScreenX + scaledCellSize / 2, antScreenY + scaledCellSize / 2);
 
     if (scaledCellSize >= 2) {
         painter.setBrush(Qt::red);
