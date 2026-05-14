@@ -423,28 +423,26 @@ void AntFieldWidget::redrawBuffer() {
         if (rgbColorCache.isEmpty()) rgbColorCache.append(QColor::fromHsv(0, 200, 230).rgb());
 
         // Screen-Space Chunk Culling: Only loop over chunks actively visible on screen
-        for (int64_t cy = startCY; cy <= endCY; ++cy) {
-            for (int64_t cx = startCX; cx <= endCX; ++cx) {
-                ChunkKey key = {cx, cy};
-                auto it = chunks.find(key);
-                if (it == chunks.end()) continue; // Skip massive 64x64 empty voids instantly
+        for (const auto& [key, chunk] : chunks) {
+            if (!chunk) continue;
+            int64_t cx = key.cx;
+            int64_t cy = key.cy;
+            if (cy < startCY || cy > endCY) continue;
+            if (cx < startCX || cx > endCX) continue;
+            for (int ly = 0; ly < CHUNK_SIZE; ++ly) {
+                for (int lx = 0; lx < CHUNK_SIZE; ++lx) {
+                    uint32_t state = chunk->states[(ly << CHUNK_SHIFT) | lx];
+                    if (state > 0) {
+                        int64_t globalX = (cx << CHUNK_SHIFT) + lx;
+                        int64_t globalY = (cy << CHUNK_SHIFT) + ly;
 
-                Chunk* chunk = it->second.get();
-                for (int ly = 0; ly < CHUNK_SIZE; ++ly) {
-                    for (int lx = 0; lx < CHUNK_SIZE; ++lx) {
-                        uint32_t state = chunk->states[(ly << CHUNK_SHIFT) | lx];
-                        if (state > 0) {
-                            int64_t globalX = (cx << CHUNK_SHIFT) + lx;
-                            int64_t globalY = (cy << CHUNK_SHIFT) + ly;
+                        qint64 screenX = qFloor(offsetX + globalX * scaledCellSize);
+                        qint64 screenY = qFloor(offsetY + globalY * scaledCellSize);
 
-                            qint64 screenX = qFloor(offsetX + globalX * scaledCellSize);
-                            qint64 screenY = qFloor(offsetY + globalY * scaledCellSize);
-
-                            if (screenX >= 0 && screenX < imageWidth && screenY >= 0 && screenY < imageHeight) {
-                                qint64 pixelIndex = screenY * imageWidth + screenX;
-                                if (pixels[pixelIndex] == 0xFFFFFFFF) {
-                                    pixels[pixelIndex] = rgbColorCache[state % rgbColorCache.size()];
-                                }
+                        if (screenX >= 0 && screenX < imageWidth && screenY >= 0 && screenY < imageHeight) {
+                            qint64 pixelIndex = screenY * imageWidth + screenX;
+                            if (pixels[pixelIndex] == 0xFFFFFFFF) {
+                                pixels[pixelIndex] = rgbColorCache[state % rgbColorCache.size()];
                             }
                         }
                     }

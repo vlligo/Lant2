@@ -53,12 +53,6 @@ struct StatChunk {
     }
 };
 
-// Now the compiler knows how to delete them
-inline std::unordered_map<ChunkKey, std::unique_ptr<Chunk>, ChunkKeyHash> chunks;
-inline std::unordered_map<ChunkKey, std::unique_ptr<StatChunk>, ChunkKeyHash> statChunks;
-
-inline std::vector<uint32_t> nextStateLUT;
-inline std::vector<int> directionChangeLUT;
 
 // Forward declaration
 struct AntStatisticsSummary;
@@ -153,7 +147,13 @@ private:
 
 
     // Mouse position tracking
-    void updateMousePosition(const QPoint& pos);  // Add this method
+    void updateMousePosition(const QPoint& pos);
+
+    std::unordered_map<ChunkKey, std::unique_ptr<Chunk>, ChunkKeyHash> chunks;
+    std::unordered_map<ChunkKey, std::unique_ptr<StatChunk>, ChunkKeyHash> statChunks;
+
+    std::vector<uint32_t> nextStateLUT;
+    std::vector<int> directionChangeLUT;
 
     // Performance-optimized cell storage
     // QHash<QPair<qint64, qint64>, int> cells;
