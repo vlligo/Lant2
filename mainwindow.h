@@ -73,7 +73,6 @@ private:
     QGroupBox *statsTableGroup{};
     QTableWidget *statsTable{};
     QLabel *coordinateLabel{};
-    QLabel *mouseCoordinateLabel{};
     QPushButton *cellDetailsButton{};
     QPushButton *statsDialogButton{};
     QPushButton *togglePanelButton{};

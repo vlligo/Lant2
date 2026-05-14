@@ -1,6 +1,5 @@
 #include "mainwindow.h"
 
-#include <iostream>
 #include <QAction>
 #include <QApplication>
 #include <QCheckBox>

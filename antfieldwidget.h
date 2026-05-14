@@ -184,13 +184,6 @@ private:
 
     static constexpr int RECENT_CELLS_BUFFER_SIZE = 1000;
 
-    struct BatchData {
-        qint64 visits = 0;
-        qint64 corners[4] = {0, 0, 0, 0};
-        qint64 firstVisitStep = -1; // Track exact step
-        qint64 lastVisitStep = -1;  // Track exact step
-    };
-
     // Interaction state
     bool dragging = false;
     QPoint64 lastMousePos;
