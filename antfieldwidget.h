@@ -107,9 +107,6 @@ public:
     void setStatisticsEnabled(bool enabled);
     QVector<QPair<QPoint64, qint64>> getTopVisitedCells(int count) const;
 
-    // Performance optimized methods
-    QVector<QPoint64> getRecentlyVisitedCells() const { return recentlyVisitedCells; }
-
 public slots:
     void setDisplayStyle(DisplayStyle style);
 
@@ -168,8 +165,8 @@ private:
     qint64 stepCount = 0;
 
     // Grid bounds
-    int minX = -50, maxX = 50;
-    int minY = -50, maxY = 50;
+    int64_t minX = -50, maxX = 50;
+    int64_t minY = -50, maxY = 50;
 
 
     // View state
@@ -185,13 +182,11 @@ private:
     mutable QMutex statisticsMutex;
     QElapsedTimer simulationTimer;
 
-    // Performance optimization: track recently visited cells for faster drawing
-    QVector<QPoint64> recentlyVisitedCells;
     static constexpr int RECENT_CELLS_BUFFER_SIZE = 1000;
 
     struct BatchData {
         qint64 visits = 0;
-        int corners[4] = {0, 0, 0, 0};
+        qint64 corners[4] = {0, 0, 0, 0};
         qint64 firstVisitStep = -1; // Track exact step
         qint64 lastVisitStep = -1;  // Track exact step
     };

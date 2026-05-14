@@ -234,8 +234,6 @@ void MainWindow::setupUI() {
     mainLayout->addWidget(statsTableGroup);
 
     // Status bar
-    statsLabel = new QLabel();
-    statusBar()->addPermanentWidget(statsLabel);
     statusBar()->showMessage("Ready");
 
 }
