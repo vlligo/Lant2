@@ -322,7 +322,7 @@ void MainWindow::setupConnections() {
 }
 
 void MainWindow::changeStyle() {
-    currentStyleIndex = (currentStyleIndex + 1) % 3;
+    currentStyleIndex = (currentStyleIndex + 1) % (antField->getIsSimpleRule() ? 4 : 3);
     const auto newStyle = static_cast<AntFieldWidget::DisplayStyle>(currentStyleIndex);
     antField->setDisplayStyle(newStyle);
 }

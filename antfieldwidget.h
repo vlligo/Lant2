@@ -30,7 +30,7 @@ struct ChunkKeyHash {
 };
 
 // --- Architecture Constants ---
-constexpr int CHUNK_SHIFT = 6;              // 2^6 = 64
+constexpr int CHUNK_SHIFT = 5;              // 2^5 = 32
 constexpr int64_t CHUNK_SIZE = (1<<CHUNK_SHIFT);
 constexpr int64_t CHUNK_MASK = CHUNK_SIZE - 1;
 constexpr int CHUNK_AREA = CHUNK_SIZE * CHUNK_SIZE;
@@ -64,7 +64,8 @@ public:
     enum DisplayStyle {
         JustColors,
         Visits,
-        Rotations
+        Rotations,
+        Diagonals
     };
     Q_ENUM(DisplayStyle)
 
@@ -105,6 +106,7 @@ public:
     void exportStatisticsToCSV(const QString &filename) const;
     void resetStatistics();
     void setStatisticsEnabled(bool enabled);
+    bool getIsSimpleRule() const { return isSimpleRule; }
     QVector<QPair<QPoint64, qint64>> getTopVisitedCells(int count) const;
 
 public slots:
@@ -198,6 +200,8 @@ private:
 
     // Rules
     QString rules;
+    uint32_t firstR = 0;
+    int isSimpleRule = true;  // Rule is a type of LaRb
 
     // Display style
     DisplayStyle currentStyle = JustColors;

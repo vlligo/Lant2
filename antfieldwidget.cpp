@@ -61,10 +61,17 @@ void AntFieldWidget::setRules(const QString &rules_str) {
     const uint32_t ruleLength = rules.length();
     nextStateLUT.resize(ruleLength);
     directionChangeLUT.resize(ruleLength);
+    isSimpleRule = true;
 
     for (uint32_t i = 0; i < ruleLength; ++i) {
         nextStateLUT[i] = (i + 1) % ruleLength;
         QChar rule = rules.at(i);
+        if (i > 0 && rule == 'R' && rules.at(i - 1) == 'L') {
+            firstR = i;
+        }
+        if (i > 0 && rule == 'L' && rules.at(i - 1) == 'R') {
+            isSimpleRule = false;
+        }
         directionChangeLUT[i] = (rule == 'L') ? 3 : 1; // +3 is mathematically equivalent to -1 (Left) in modulo 4
     }
 
@@ -165,7 +172,7 @@ void AntFieldWidget::nextStep(const qint64 steps) {
             state = nextStateLUT[state];
         }
 
-        // Statistics update (unchanged, but now safely zero-initialised)
+        // Statistics update (unchanged, but now safely zero-initialized)
         if (statisticsEnabled && currentStatChunk) {
             currentStatChunk->visits[localIndex]++;
 
@@ -493,84 +500,93 @@ void AntFieldWidget::redrawBuffer() {
         }
     }
 
-    // --- Rewritten Statistics Overlay for Chunked Architecture ---
 
-if (!useOptimizedDrawing && statisticsEnabled && scaledCellSize >= 8 && currentStyle != JustColors) {
-    QMutexLocker locker(&statisticsMutex);
-    painter.setPen(Qt::black);
+    if (!useOptimizedDrawing && statisticsEnabled && scaledCellSize >= 8 && currentStyle != JustColors) {
+        QMutexLocker locker(&statisticsMutex);
+        painter.setPen(QPen(Qt::black, 3));
 
-    // Reuse the chunk bounds calculated earlier in redrawBuffer()
-    for (int64_t cy = startCY; cy <= endCY; ++cy) {
-        for (int64_t cx = startCX; cx <= endCX; ++cx) {
-            auto it = statChunks.find({cx, cy});
-            if (it == statChunks.end()) continue; // Skip empty chunks
+        // Reuse the chunk bounds calculated earlier in redrawBuffer()
+        for (int64_t cy = startCY; cy <= endCY; ++cy) {
+            for (int64_t cx = startCX; cx <= endCX; ++cx) {
+                auto it = statChunks.find({cx, cy});
+                if (it == statChunks.end()) continue; // Skip empty chunks
 
-            StatChunk* statChunk = it->second.get();
+                StatChunk* statChunk = it->second.get();
+                ChunkKey key = {cx, cy};
+                Chunk* chunk = chunks.find(key)->second.get();
 
-            for (int i = 0; i < CHUNK_AREA; ++i) {
-                if (statChunk->visits[i] == 0) continue;
+                for (int i = 0; i < CHUNK_AREA; ++i) {
+                    if (statChunk->visits[i] == 0) continue;
 
-                // Convert local chunk index back to global field coordinates
-                int64_t gx = (cx << CHUNK_SHIFT) + (i % CHUNK_SIZE);
-                int64_t gy = (cy << CHUNK_SHIFT) + (i / CHUNK_SIZE);
+                    // Convert local chunk index back to global field coordinates
+                    int64_t gx = (cx << CHUNK_SHIFT) + (i % CHUNK_SIZE);
+                    int64_t gy = (cy << CHUNK_SHIFT) + (i / CHUNK_SIZE);
 
-                // Calculate screen position
-                QRectF cellRect(offsetX + gx * scaledCellSize,
-                               offsetY + gy * scaledCellSize,
-                               scaledCellSize, scaledCellSize);
+                    // Calculate screen position
+                    QRectF cellRect(offsetX + gx * scaledCellSize,
+                                   offsetY + gy * scaledCellSize,
+                                   scaledCellSize, scaledCellSize);
 
-                if (currentStyle == Visits) {
-                    QString text = QString::number(statChunk->visits[i]);
+                    if (currentStyle == Visits) {
+                        QString text = QString::number(statChunk->visits[i]);
 
-                    // Dynamic Font Scaling
-                    QFont font = painter.font();
-                    font.setPointSizeF(1);
-                    painter.setFont(font);
-                    QRectF textRect = painter.fontMetrics().boundingRect(text);
-
-                    double scale = qMin((cellRect.width() * 0.8) / textRect.width(),
-                                        (cellRect.height() * 0.8) / textRect.height());
-
-                    font.setPointSizeF(qMax(1.0, scale)); // Ensure readable size
-                    painter.setFont(font);
-                    painter.drawText(cellRect, Qt::AlignCenter, text);
-
-                } else if (currentStyle == Rotations) {
-                    auto drawCornerText = [&](const QRectF &rect, uint32_t value, Qt::Alignment align) {
-                        if (value == 0) return;
-
-                        QString cur_text = QString::number(value);
-                        QRectF cornerRect(0, 0, rect.width() / 2, rect.height() / 2);
-
-                        if (align & Qt::AlignRight) cornerRect.moveLeft(rect.center().x());
-                        else cornerRect.moveLeft(rect.left());
-
-                        if (align & Qt::AlignBottom) cornerRect.moveTop(rect.center().y());
-                        else cornerRect.moveTop(rect.top());
-
+                        // Dynamic Font Scaling
                         QFont font = painter.font();
                         font.setPointSizeF(1);
                         painter.setFont(font);
-                        QRectF textRect = painter.fontMetrics().boundingRect(cur_text);
+                        QRectF textRect = painter.fontMetrics().boundingRect(text);
 
-                        double scale = qMin((cornerRect.width() * 0.85) / textRect.width(),
-                                            (cornerRect.height() * 0.85) / textRect.height());
+                        double scale = qMin((cellRect.width() * 0.8) / textRect.width(),
+                                            (cellRect.height() * 0.8) / textRect.height());
 
-                        font.setPointSizeF(qMax(1.0, scale));
+                        font.setPointSizeF(qMax(1.0, scale)); // Ensure readable size
                         painter.setFont(font);
-                        painter.drawText(cornerRect, Qt::AlignCenter, cur_text);
-                    };
+                        painter.drawText(cellRect, Qt::AlignCenter, text);
 
-                    // Draw the 4 corner counters from our statChunk array
-                    drawCornerText(cellRect, statChunk->corners[i][0], Qt::AlignLeft | Qt::AlignTop);
-                    drawCornerText(cellRect, statChunk->corners[i][1], Qt::AlignRight | Qt::AlignTop);
-                    drawCornerText(cellRect, statChunk->corners[i][2], Qt::AlignRight | Qt::AlignBottom);
-                    drawCornerText(cellRect, statChunk->corners[i][3], Qt::AlignLeft | Qt::AlignBottom);
+                    } else if (currentStyle == Rotations) {
+                        auto drawCornerText = [&](const QRectF &rect, uint32_t value, Qt::Alignment align) {
+                            if (value == 0) return;
+
+                            QString cur_text = QString::number(value);
+                            QRectF cornerRect(0, 0, rect.width() / 2, rect.height() / 2);
+
+                            if (align & Qt::AlignRight) cornerRect.moveLeft(rect.center().x());
+                            else cornerRect.moveLeft(rect.left());
+
+                            if (align & Qt::AlignBottom) cornerRect.moveTop(rect.center().y());
+                            else cornerRect.moveTop(rect.top());
+
+                            QFont font = painter.font();
+                            font.setPointSizeF(1);
+                            painter.setFont(font);
+                            QRectF textRect = painter.fontMetrics().boundingRect(cur_text);
+
+                            double scale = qMin((cornerRect.width() * 0.85) / textRect.width(),
+                                                (cornerRect.height() * 0.85) / textRect.height());
+
+                            font.setPointSizeF(qMax(1.0, scale));
+                            painter.setFont(font);
+                            painter.drawText(cornerRect, Qt::AlignCenter, cur_text);
+                        };
+
+                        // Draw the 4 corner counters from our statChunk array
+                        drawCornerText(cellRect, statChunk->corners[i][0], Qt::AlignLeft | Qt::AlignTop);
+                        drawCornerText(cellRect, statChunk->corners[i][1], Qt::AlignRight | Qt::AlignTop);
+                        drawCornerText(cellRect, statChunk->corners[i][2], Qt::AlignRight | Qt::AlignBottom);
+                        drawCornerText(cellRect, statChunk->corners[i][3], Qt::AlignLeft | Qt::AlignBottom);
+                    } else if (currentStyle == Diagonals) {
+                        if (chunk->states[i] == firstR) {
+                            if  ((i % CHUNK_SIZE + i / CHUNK_SIZE) % 2 != 0) {
+                                painter.drawLine(cellRect.bottomLeft(), cellRect.topRight());
+                            } else {
+                                painter.drawLine(cellRect.bottomRight(), cellRect.topLeft());
+                            }
+                        }
+                    }
                 }
             }
         }
     }
-}
 
     // Draw ant
     const long double antScreenX = offsetX + antX * scaledCellSize;
