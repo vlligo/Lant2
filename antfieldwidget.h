@@ -65,6 +65,7 @@ public:
         JustColors,
         Visits,
         Rotations,
+        Arcs,
         Diagonals
     };
     Q_ENUM(DisplayStyle)
@@ -143,6 +144,7 @@ private:
     void redrawBuffer();
     void updateStateColors();
     QColor stateToColor(int state) const;
+    int previousState(int state) const;
 
 
     // Mouse position tracking

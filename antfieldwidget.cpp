@@ -582,6 +582,19 @@ void AntFieldWidget::redrawBuffer() {
                                 painter.drawLine(cellRect.bottomRight(), cellRect.topLeft());
                             }
                         }
+                    } else if (currentStyle == Arcs) {
+                        if ((rules.at(previousState(chunk->states[i])) == 'L') ^ ((i % CHUNK_SIZE + i / CHUNK_SIZE) % 2 == 0)) {
+                            painter.drawArc(cellRect.adjusted(cellRect.width()/2.0, cellRect.height()/2.0,
+                                      cellRect.width()/2.0, cellRect.height()/2.0), 180 * 16, -90 * 16);
+                            painter.drawArc(cellRect.adjusted(-cellRect.width()/2.0, -cellRect.height()/2.0,
+                                      -cellRect.width()/2.0, -cellRect.height()/2.0), 0 * 16, -90 * 16);
+                        } else {
+                            painter.drawArc(cellRect.adjusted(cellRect.width()/2.0, -cellRect.height()/2.0,
+                                      cellRect.width()/2.0, -cellRect.height()/2.0), 270 * 16, -90 * 16);
+                            painter.drawArc(cellRect.adjusted(-cellRect.width()/2.0, cellRect.height()/2.0,
+                                      -cellRect.width()/2.0, cellRect.height()/2.0), 90 * 16, -90 * 16);
+                        }
+
                     }
                 }
             }
@@ -633,6 +646,10 @@ QColor AntFieldWidget::stateToColor(int state) const {
         return QColor::fromHsv(0, 200, 230);
     }
     return stateColorCache[state % stateColorCache.size()];
+}
+
+int AntFieldWidget::previousState(int state) const {
+    return state == 0 ? rules.length() - 1 : state - 1;
 }
 
 void AntFieldWidget::mousePressEvent(QMouseEvent *event) {
