@@ -106,7 +106,6 @@ public:
     void exportStatisticsToCSV(const QString &filename) const;
     void resetStatistics();
     void setStatisticsEnabled(bool enabled);
-    bool getIsSimpleRule() const { return isSimpleRule; }
     QVector<QPair<QPoint64, qint64>> getTopVisitedCells(int count) const;
 
 public slots:
@@ -144,6 +143,7 @@ private:
     void updateStateColors();
     QColor stateToColor(int state) const;
     int previousState(int state) const;
+    int nextState(int state) const;
 
 
     // Mouse position tracking
@@ -202,7 +202,6 @@ private:
     // Rules
     QString rules;
     uint32_t firstR = 0;
-    int isSimpleRule = true;  // Rule is a type of LaRb
 
     // Display style
     DisplayStyle currentStyle = JustColors;

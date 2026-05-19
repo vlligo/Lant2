@@ -575,8 +575,8 @@ void AntFieldWidget::redrawBuffer() {
                         drawCornerText(cellRect, statChunk->corners[i][2], Qt::AlignRight | Qt::AlignBottom);
                         drawCornerText(cellRect, statChunk->corners[i][3], Qt::AlignLeft | Qt::AlignBottom);
                     } else if (currentStyle == Diagonals) {
-                        if (chunk->states[i] == firstR) {
-                            if  ((i % CHUNK_SIZE + i / CHUNK_SIZE) % 2 != 0) {
+                        if (rules.at(chunk->states[i]) != rules.at(nextState(chunk->states[i]))) {
+                            if  ((rules.at(previousState(chunk->states[i])) == 'R') ^ ((i % CHUNK_SIZE + i / CHUNK_SIZE) % 2 != 0)) {
                                 painter.drawLine(cellRect.bottomLeft(), cellRect.topRight());
                             } else {
                                 painter.drawLine(cellRect.bottomRight(), cellRect.topLeft());
@@ -648,8 +648,12 @@ QColor AntFieldWidget::stateToColor(const int state) const {
     return stateColorCache[state % stateColorCache.size()];
 }
 
-int AntFieldWidget::previousState(int state) const {
+int AntFieldWidget::previousState(const int state) const {
     return state == 0 ? rules.length() - 1 : state - 1;
+}
+
+int AntFieldWidget::nextState(const int state) const {
+    return (state + 1) % rules.length();
 }
 
 void AntFieldWidget::mousePressEvent(QMouseEvent *event) {
