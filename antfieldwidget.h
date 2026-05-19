@@ -83,7 +83,7 @@ public:
     explicit AntFieldWidget(QWidget *parent = nullptr);
     ~AntFieldWidget() override;
 
-    void setRules(const QString &rules);
+    void setRules(const QString &rules_str);
     void reset();
     void nextStep(qint64 steps = 1);
     void setCellSize(int size);
@@ -141,9 +141,9 @@ private:
     // Drawing and state management
     void redrawBuffer();
     void updateStateColors();
-    QColor stateToColor(int state) const;
-    int previousState(int state) const;
-    int nextState(int state) const;
+    QColor stateToColor(uint32_t state) const;
+    uint32_t previousState(uint32_t state) const;
+    uint32_t nextState(uint32_t state) const;
 
 
     // Mouse position tracking
@@ -173,7 +173,7 @@ private:
 
 
     // View state
-    long double offsetX = 0, offsetY = 0;
+    qreal offsetX = 0, offsetY = 0;
     double zoomFactor = 1.0;
     int cellSize = 6;
 
@@ -201,7 +201,6 @@ private:
 
     // Rules
     QString rules;
-    uint32_t firstR = 0;
 
     // Display style
     DisplayStyle currentStyle = JustColors;
