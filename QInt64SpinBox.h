@@ -34,12 +34,12 @@ public:
 
     [[nodiscard]] QString suffix() const;
     void setSuffix(const QString &suffix);
+    void stepBy(int steps) override;
 
     signals:
         void valueChanged(qint64 value);
 
 protected:
-    void stepBy(int steps);
     [[nodiscard]] StepEnabled stepEnabled() const override;
 
     // Handling of manually typed text

@@ -80,7 +80,7 @@ void AntFieldWidget::setRules(const QString &rules_str) {
 
 void AntFieldWidget::updateStateColors() {
     stateColorCache.clear();
-    int maxStates = qMax(2, rules.length());
+    const int maxStates = qMax(2, rules.length());
 
     for (int state = 0; state < maxStates; ++state) {
         const float ratio = static_cast<float>(state) / (maxStates > 1 ? (maxStates - 1) : 1);
@@ -162,7 +162,7 @@ void AntFieldWidget::nextStep(const qint64 steps) {
         // local index now computed from chunk index (always 0 … CHUNK_SIZE-1)
         int64_t lx = antX - currentKey.cx * CHUNK_SIZE;
         int64_t ly = antY - currentKey.cy * CHUNK_SIZE;
-        int localIndex = (ly << CHUNK_SHIFT) | lx;
+        int64_t localIndex = (ly << CHUNK_SHIFT) | lx;
 
         uint32_t& state = currentChunk->states[localIndex];
         int oldDir = antDir;
@@ -219,10 +219,10 @@ void AntFieldWidget::setDisplayStyle(DisplayStyle style) {
     }
 }
 
-int AntFieldWidget::getVisitCount(qint64 x, qint64 y) const {
+int64_t AntFieldWidget::getVisitCount(const qint64 x, const qint64 y) const {
     if (!statisticsEnabled) return 0;
     QMutexLocker locker(&statisticsMutex);
-    ChunkKey key = { x >> CHUNK_SHIFT, y >> CHUNK_SHIFT };
+    const ChunkKey key = { x >> CHUNK_SHIFT, y >> CHUNK_SHIFT };
     auto it = statChunks.find(key);
     if (it != statChunks.end()) {
         return it->second->visits[((y & CHUNK_MASK) << CHUNK_SHIFT) | (x & CHUNK_MASK)];
@@ -630,18 +630,18 @@ void AntFieldWidget::redrawBuffer() {
 
 QPoint64 AntFieldWidget::screenToField(const QPoint64 &screenPos) const {
     const double scaledCellSize = cellSize * zoomFactor;
-    if (qFuzzyIsNull(scaledCellSize)) return QPoint64(0, 0);
-    return QPoint64(qFloor((screenPos.x() - offsetX) / scaledCellSize),
-                  qFloor((screenPos.y() - offsetY) / scaledCellSize));
+    if (qFuzzyIsNull(scaledCellSize)) return {0, 0};
+    return {qFloor((screenPos.x() - offsetX) / scaledCellSize),
+                  qFloor((screenPos.y() - offsetY) / scaledCellSize)};
 }
 
 QPoint64 AntFieldWidget::fieldToScreen(const QPoint64 &fieldPos) const {
     const double scaledCellSize = cellSize * zoomFactor;
-    return QPoint64(qRound(double(fieldPos.x() * scaledCellSize + offsetX)),
-                  qRound(double(fieldPos.y() * scaledCellSize + offsetY)));
+    return {qRound(static_cast<double>(fieldPos.x() * scaledCellSize + offsetX)),
+                  qRound(static_cast<double>(fieldPos.y() * scaledCellSize + offsetY))};
 }
 
-QColor AntFieldWidget::stateToColor(int state) const {
+QColor AntFieldWidget::stateToColor(const int state) const {
     if (stateColorCache.isEmpty()) {
         return QColor::fromHsv(0, 200, 230);
     }

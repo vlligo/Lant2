@@ -80,8 +80,8 @@ private:
     QPushButton *stepButton{};
     QPushButton *resetButton{};
     QPushButton *centerButton{};
-    QPushButton *zoomOutButton;
-    QPushButton *zoomInButton;
+    QPushButton *zoomOutButton{};
+    QPushButton *zoomInButton{};
     QPushButton *cellSizeButton{};
     QPushButton *centerMostVisitedButton{};
     QPushButton *centerCoordinatesButton{};

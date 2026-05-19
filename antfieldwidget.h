@@ -4,7 +4,6 @@
 #include <QWidget>
 #include <QString>
 #include <QColor>
-#include <QHash>
 #include <QVector>
 #include <QMutex>
 #include <QElapsedTimer>
@@ -45,7 +44,7 @@ struct Chunk {
 struct StatChunk {
     uint32_t visits[CHUNK_AREA] = {0};
     uint32_t corners[CHUNK_AREA][4] = {0};
-    int64_t firstVisitStep[CHUNK_AREA];
+    int64_t firstVisitStep[CHUNK_AREA]{};
     int64_t lastVisitStep[CHUNK_AREA] = {0};
 
     StatChunk() {
@@ -99,7 +98,7 @@ public:
     void moveView(qint64 dx, qint64 dy);
 
     // Statistics methods
-    int getVisitCount(qint64 x, qint64 y) const;
+    int64_t getVisitCount(qint64 x, qint64 y) const;
     QPoint64 getMostVisitedCell() const;
     qint64 getTotalVisitedCells() const;
     qint64 getUniqueVisitedCells() const;
