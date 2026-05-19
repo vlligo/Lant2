@@ -15,6 +15,9 @@ class QCheckBox;
 class QLabel;
 class QTableWidget;
 class QGroupBox;
+class QTimer;
+
+constexpr int64_t STEP_COUNT = 10000000;
 
 class MainWindow : public QMainWindow {
     Q_OBJECT
@@ -46,6 +49,9 @@ private slots:
     void centerOnSelectedStatistic();
     void onMouseOverCell(qint64 x, qint64 y) const;
     void changeStyle();
+    void startSimulation()const;
+    void stopSimulation()const;
+    void autoStep()const;
 
 private:
     void loadPresets();
@@ -94,6 +100,9 @@ private:
     QAction *exportAction{};
     QAction *resetStatsAction{};
     QAction *exitAction{};
+    QPushButton *startButton{};
+    QPushButton *stopButton{};
+    QTimer *autoRunTimer{};
 
     qint64 lastCustomSteps = 1000;
     int currentStyleIndex = 0;

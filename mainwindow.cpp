@@ -108,12 +108,19 @@ void MainWindow::setupUI() {
     quickStepsButton = new QPushButton("Run");
     controlLayout->addWidget(quickStepsButton, row, 2);
 
+    startButton = new QPushButton("Start");
+    controlLayout->addWidget(startButton, row, 3);
+
+    stopButton = new QPushButton("Stop");
+    stopButton->setEnabled(false); // Disabled initially
+    controlLayout->addWidget(stopButton, row, 4);
+
     resetButton = new QPushButton("Reset");
-    controlLayout->addWidget(resetButton, row, 3);
+    controlLayout->addWidget(resetButton, row, 5);
 
     statsCheckBox = new QCheckBox("Track Statistics");
     statsCheckBox->setChecked(true);
-    controlLayout->addWidget(statsCheckBox, row, 4);
+    controlLayout->addWidget(statsCheckBox, row, 6);
 
     row++;
 
@@ -260,7 +267,13 @@ void MainWindow::setupConnections() {
     connect(antField, &AntFieldWidget::mouseOverCell, this,
             &MainWindow::onMouseOverCell);
 
+    // Initialize the timer
+    autoRunTimer = new QTimer(this);
+    connect(autoRunTimer, &QTimer::timeout, this, &MainWindow::autoStep);
+
     // Buttons
+    connect(startButton, &QPushButton::clicked, this, &MainWindow::startSimulation);
+    connect(stopButton, &QPushButton::clicked, this, &MainWindow::stopSimulation);
     connect(rulesButton, &QPushButton::clicked, this, &MainWindow::updateRules);
     connect(stepButton, &QPushButton::clicked, this, &MainWindow::takeStep);
     connect(quickStepsButton, &QPushButton::clicked, this, &MainWindow::onQuickStepsClicked);
@@ -689,4 +702,24 @@ void MainWindow::showCellDetails() {
                                  "Please enter coordinates in the format: x,y");
         }
     }
+}
+
+void MainWindow::startSimulation()const {
+    startButton->setEnabled(false);
+    stopButton->setEnabled(true);
+
+    autoRunTimer->start(0);
+}
+
+void MainWindow::stopSimulation()const {
+    startButton->setEnabled(true);
+    stopButton->setEnabled(false);
+
+    autoRunTimer->stop();
+}
+
+void MainWindow::autoStep()const {
+    antField->nextStep(STEP_COUNT);
+
+    updateQuickStatistics();
 }
