@@ -296,8 +296,7 @@ void MainWindow::setupConnections() {
     connect(styleButton, &QPushButton::clicked, this, &MainWindow::changeStyle);
 
     // Preset combo
-    auto* presetCombo = findChild<QComboBox*>();
-    if (presetCombo) {
+    if (const auto* presetCombo = findChild<QComboBox*>()) {
         connect(presetCombo, QOverload<int>::of(&QComboBox::activated), this,
                 &MainWindow::loadPreset);
     }
@@ -453,7 +452,7 @@ void MainWindow::updateStatisticsTable() const {
     }
 
     auto topCells = antField->getTopVisitedCells(20);
-    statsTable->setRowCount(topCells.size());
+    statsTable->setRowCount(static_cast<int>(topCells.size()));
 
     for (int i = 0; i < topCells.size(); ++i) {
         const auto& cell = topCells[i];
@@ -524,10 +523,8 @@ void MainWindow::centerOnCoordinates() {
 }
 
 void MainWindow::centerOnTableCell() {
-    int row = statsTable->currentRow();
-    if (row >= 0) {
-        QTableWidgetItem* item = statsTable->item(row, 0);
-        if (item) {
+    if (const int row = statsTable->currentRow();row >= 0) {
+        if (const QTableWidgetItem* item = statsTable->item(row, 0)) {
             QString text = item->text();
             // Extract coordinates from format like "(x, y)"
             text = text.mid(1, text.length() - 2);  // Remove parentheses
@@ -578,7 +575,7 @@ void MainWindow::centerOnSelectedStatistic() {
     }
 }
 
-void MainWindow::moveView(qint64 dx, qint64 dy) const {
+void MainWindow::moveView(const qint64 dx, const qint64 dy) const {
     antField->moveView(dx, dy);
 }
 

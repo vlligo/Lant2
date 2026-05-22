@@ -42,8 +42,8 @@ struct Chunk {
 };
 
 struct StatChunk {
-    uint32_t visits[CHUNK_AREA] = {0};
-    uint32_t corners[CHUNK_AREA][4] = {0};
+    int64_t visits[CHUNK_AREA] = {0};
+    int64_t corners[CHUNK_AREA][4] = {0};
     int64_t firstVisitStep[CHUNK_AREA]{};
     int64_t lastVisitStep[CHUNK_AREA] = {0};
 

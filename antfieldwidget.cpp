@@ -114,7 +114,7 @@ void AntFieldWidget::nextStep(const qint64 steps) {
     setUpdatesEnabled(false);
 
     // Helper for safe chunk index (floor division) and local index.
-    auto chunkIndex = [&](int64_t coord) -> int64_t {
+    auto chunkIndex = [&](const int64_t coord) -> int64_t {
         // C++ division truncates toward zero → adjust for negatives
         int64_t ci = coord / CHUNK_SIZE;
         if (coord < 0 && (coord & CHUNK_MASK) != 0) --ci;
@@ -122,8 +122,8 @@ void AntFieldWidget::nextStep(const qint64 steps) {
     };
 
     // Compute starting chunk
-    int64_t cx = chunkIndex(antX);
-    int64_t cy = chunkIndex(antY);
+    const int64_t cx = chunkIndex(antX);
+    const int64_t cy = chunkIndex(antY);
     ChunkKey currentKey{cx, cy};
 
     Chunk* currentChunk = nullptr;
