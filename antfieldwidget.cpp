@@ -4,11 +4,11 @@
 #include <QApplication>
 #include <QtMath>
 #include <QFile>
-#include <QTextStream>
 #include <algorithm>
 #include <QMutexLocker>
 #include <QTimer>
 #include <QCursor>
+#include <QDataStream>
 
 #include "QPoint64.h"
 
@@ -284,30 +284,114 @@ QVector<QPair<QPoint64, qint64>> AntFieldWidget::getTopVisitedCells(const int co
     return allCells;
 }
 
-void AntFieldWidget::exportStatisticsToCSV(const QString &filename) const {
+bool AntFieldWidget::saveState(const QString &filename) const {
     QMutexLocker locker(&statisticsMutex);
     QFile file(filename);
-    if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
-        qWarning() << "Failed to open file for writing:" << filename;
-        return;
-    }
-    QTextStream out(&file);
-    out << "X,Y,VisitCount,FirstVisitStep,LastVisitStep\n";
+    if (!file.open(QIODevice::WriteOnly)) return false;
 
-    for (const auto& [key, statChunk] : statChunks) {
-        for (int i = 0; i < CHUNK_AREA; ++i) {
-            if (statChunk->visits[i] > 0) {
-                // reconstruct using chunk coordinates (safe, no bit‑shift assumptions)
-                int64_t gx = (key.cx * CHUNK_SIZE) + (i % CHUNK_SIZE);
-                int64_t gy = (key.cy * CHUNK_SIZE) + (i / CHUNK_SIZE);
-                out << gx << "," << gy << ","
-                    << statChunk->visits[i] << ","
-                    << statChunk->firstVisitStep[i] << ","
-                    << statChunk->lastVisitStep[i] << "\n";
+    QDataStream out(&file);
+
+    // 1. Save global simulation and view state
+    out << rules << antX << antY << static_cast<qint32>(antDir) << stepCount;
+    out << static_cast<qint64>(minX) << static_cast<qint64>(maxX)
+        << static_cast<qint64>(minY) << static_cast<qint64>(maxY);
+    out << static_cast<qreal>(offsetX) << static_cast<qreal>(offsetY)
+        << static_cast<double>(zoomFactor) << static_cast<qint32>(cellSize);
+    out << static_cast<qint64>(maxVisits) << static_cast<qint64>(uniqueCellsCount);
+    out << static_cast<qint64>(mostVisitedCell.x()) << static_cast<qint64>(mostVisitedCell.y());
+    out << statisticsEnabled;
+
+    // 2. Save Chunks
+    out << static_cast<quint64>(chunks.size());
+    for (const auto& [key, chunk] : chunks) {
+        out << static_cast<qint64>(key.cx) << static_cast<qint64>(key.cy);
+
+        for (const unsigned int state : chunk->states) {
+            out << static_cast<quint32>(state);
+        }
+
+        auto statIt = statChunks.find(key);
+        bool hasStats = (statIt != statChunks.end() && statIt->second != nullptr);
+        out << hasStats;
+        if (hasStats) {
+            const StatChunk* sc = statIt->second.get();
+            for (int i = 0; i < CHUNK_AREA; ++i) {
+                out << static_cast<qint64>(sc->visits[i]);
+                for (int c = 0; c < 4; ++c) {
+                    out << static_cast<qint64>(sc->corners[i][c]);
+                }
+                out << static_cast<qint64>(sc->firstVisitStep[i]) << static_cast<qint64>(sc->lastVisitStep[i]);
             }
         }
     }
-    file.close();
+    return true;
+}
+
+bool AntFieldWidget::loadState(const QString &filename) {
+    QFile file(filename);
+    if (!file.open(QIODevice::ReadOnly)) return false;
+
+    QDataStream in(&file);
+
+    QString newRules;
+    in >> newRules;
+    setRules(newRules); // Triggers a reset()
+
+    QMutexLocker locker(&statisticsMutex);
+    qint32 dir32, cell32;
+    qint64 mx, my;
+    bool statsOn;
+
+    // 1. Restore global state
+    in >> antX >> antY >> dir32 >> stepCount;
+    antDir = dir32;
+    in >> minX >> maxX >> minY >> maxY;
+    in >> offsetX >> offsetY >> zoomFactor >> cell32;
+    cellSize = cell32;
+    in >> maxVisits >> uniqueCellsCount;
+    in >> mx >> my;
+    mostVisitedCell = QPoint64(mx, my);
+    in >> statsOn;
+    statisticsEnabled = statsOn;
+
+    quint64 numChunks;
+    in >> numChunks;
+
+    chunks.clear();
+    statChunks.clear();
+
+    // 2. Restore Chunks
+    for (quint64 k = 0; k < numChunks; ++k) {
+        ChunkKey key;
+        in >> key.cx >> key.cy;
+
+        auto chunk = std::make_unique<Chunk>();
+        for (int i = 0; i < CHUNK_AREA; ++i) {
+            quint32 state;
+            in >> state;
+            chunk->states[i] = state;
+        }
+        chunks[key] = std::move(chunk);
+
+        bool hasStats;
+        in >> hasStats;
+        if (hasStats) {
+            auto sc = std::make_unique<StatChunk>();
+            for (int i = 0; i < CHUNK_AREA; ++i) {
+                in >> sc->visits[i];
+                for (int c = 0; c < 4; ++c) in >> sc->corners[i][c];
+                in >> sc->firstVisitStep[i] >> sc->lastVisitStep[i];
+            }
+            statChunks[key] = std::move(sc);
+        }
+    }
+
+    needsRedraw = true;
+    update();
+    emit antMoved(antX, antY, antDir, stepCount);
+    emit stepsChanged(stepCount);
+    emit zoomChanged(zoomFactor);
+    return true;
 }
 
 void AntFieldWidget::resetStatistics() {

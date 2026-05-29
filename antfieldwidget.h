@@ -15,7 +15,7 @@
 
 
 struct ChunkKey {
-    int64_t cx, cy;
+    qint64 cx, cy;
     bool operator==(const ChunkKey& o) const { return cx == o.cx && cy == o.cy; }
 };
 
@@ -42,10 +42,10 @@ struct Chunk {
 };
 
 struct StatChunk {
-    int64_t visits[CHUNK_AREA] = {0};
-    int64_t corners[CHUNK_AREA][4] = {0};
-    int64_t firstVisitStep[CHUNK_AREA]{};
-    int64_t lastVisitStep[CHUNK_AREA] = {0};
+    qint64 visits[CHUNK_AREA] = {0};
+    qint64 corners[CHUNK_AREA][4] = {0};
+    qint64 firstVisitStep[CHUNK_AREA]{};
+    qint64 lastVisitStep[CHUNK_AREA] = {0};
 
     StatChunk() {
         std::fill_n(firstVisitStep, CHUNK_AREA, -1);
@@ -103,7 +103,10 @@ public:
     qint64 getTotalVisitedCells() const;
     qint64 getUniqueVisitedCells() const;
     AntStatisticsSummary getStatisticsSummary() const;
-    void exportStatisticsToCSV(const QString &filename) const;
+    bool saveState(const QString &filename) const;
+    bool loadState(const QString &filename);
+    QString getRules() const { return rules; }
+    bool isStatisticsEnabled() const { return statisticsEnabled; }
     void resetStatistics();
     void setStatisticsEnabled(bool enabled);
     QVector<QPair<QPoint64, qint64>> getTopVisitedCells(int count) const;
@@ -168,8 +171,8 @@ private:
     qint64 stepCount = 0;
 
     // Grid bounds
-    int64_t minX = -50, maxX = 50;
-    int64_t minY = -50, maxY = 50;
+    qint64 minX = -50, maxX = 50;
+    qint64 minY = -50, maxY = 50;
 
 
     // View state

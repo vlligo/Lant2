@@ -43,7 +43,8 @@ private slots:
     void loadPreset(int index);
     void showStatistics();
     void toggleStatistics(bool enabled) const;
-    void exportStatistics();
+    void saveState();
+    void loadState();
     void showCellDetails();
     void centerOnTableCell();
     void centerOnSelectedStatistic();
@@ -103,6 +104,10 @@ private:
     QPushButton *startButton{};
     QPushButton *stopButton{};
     QTimer *autoRunTimer{};
+    QAction *saveAction{};
+    QAction *loadAction{};
+    QPushButton *saveButton{};
+    QPushButton *loadButton{};
 
     qint64 lastCustomSteps = 1000;
     int currentStyleIndex = 0;

@@ -20,6 +20,8 @@
 #include <QTableWidget>
 #include <QTimer>
 #include <utility>
+#include <QDateTime>
+#include <QFileDialog>
 
 #include "antfieldwidget.h"
 #include "QPoint64.h"
@@ -54,7 +56,8 @@ void MainWindow::setupUI() {
 
     // Create menu bar
     QMenu* fileMenu = menuBar()->addMenu("&File");
-    exportAction = fileMenu->addAction("&Export Statistics...");
+    saveAction = fileMenu->addAction("&Save State");
+    loadAction = fileMenu->addAction("&Load State");
     fileMenu->addSeparator();
     exitAction = fileMenu->addAction("E&xit");
 
@@ -91,6 +94,11 @@ void MainWindow::setupUI() {
 
     rulesLabel = new QLabel("Rules: LR");
     controlLayout->addWidget(rulesLabel, row, 4, 1, 2);
+    saveButton = new QPushButton("Save State");
+    controlLayout->addWidget(saveButton, row, 6);
+
+    loadButton = new QPushButton("Load State");
+    controlLayout->addWidget(loadButton, row, 7);
 
     row++;
 
@@ -246,8 +254,10 @@ void MainWindow::setupUI() {
 
 void MainWindow::setupConnections() {
     // Connect menu actions
-    connect(exportAction, &QAction::triggered, this,
-            &MainWindow::exportStatistics);
+    connect(saveAction, &QAction::triggered, this, &MainWindow::saveState);
+    connect(loadAction, &QAction::triggered, this, &MainWindow::loadState);
+    connect(saveButton, &QPushButton::clicked, this, &MainWindow::saveState);
+    connect(loadButton, &QPushButton::clicked, this, &MainWindow::loadState);
     connect(resetStatsAction, &QAction::triggered, [this]() {
         antField->resetStatistics();
         updateQuickStatistics();  // Update quick stats immediately
@@ -654,18 +664,42 @@ void MainWindow::toggleStatistics(bool enabled) const {
     }
 }
 
-void MainWindow::exportStatistics() {
+void MainWindow::saveState() {
+    QString defaultName = QString("%1_%2.ant")
+        .arg(antField->getRules())
+        .arg(QDateTime::currentDateTime().toString("yyyyMMdd_HHmmss"));
+
     QString fileName = QFileDialog::getSaveFileName(
-        this, "Export Statistics", "ant_statistics.csv", "CSV Files (*.csv)");
+        this, "Save Simulation State", defaultName, "Ant State Files (*.ant);;All Files (*)");
+
     if (!fileName.isEmpty()) {
-        try {
-            antField->exportStatisticsToCSV(fileName);
-            statusBar()->showMessage("Statistics exported to " + fileName,
-                                     3000);
-        } catch (const std::exception& e) {
-            QMessageBox::critical(
-                this, "Export Error",
-                QString("Failed to export: %1").arg(e.what()));
+        if (antField->saveState(fileName)) {
+            statusBar()->showMessage("State saved to " + fileName, 3000);
+        } else {
+            QMessageBox::critical(this, "Save Error", "Failed to save the simulation state.");
+        }
+    }
+}
+
+void MainWindow::loadState() {
+    QString fileName = QFileDialog::getOpenFileName(
+        this, "Load Simulation State", "", "Ant State Files (*.ant);;All Files (*)");
+
+    if (!fileName.isEmpty()) {
+        if (antField->loadState(fileName)) {
+            // Sync UI components to the loaded state
+            QString loadedRules = antField->getRules();
+            rulesEdit->setText(loadedRules);
+            rulesLabel->setText("Rules: " + loadedRules);
+            statsCheckBox->setChecked(antField->isStatisticsEnabled());
+
+            updateQuickStatistics();
+            if (statsTableGroup->isVisible()) {
+                updateStatisticsTable();
+            }
+            statusBar()->showMessage("State loaded from " + fileName, 3000);
+        } else {
+            QMessageBox::critical(this, "Load Error", "Failed to load the simulation state.");
         }
     }
 }
