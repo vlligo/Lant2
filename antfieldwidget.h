@@ -105,7 +105,7 @@ public:
     AntStatisticsSummary getStatisticsSummary() const;
     bool saveState(const QString &filename) const;
     bool loadState(const QString &filename);
-    QString getRules() const { return rules; }
+    QString getRules() const;
     bool isStatisticsEnabled() const { return statisticsEnabled; }
     void resetStatistics();
     void setStatisticsEnabled(bool enabled);

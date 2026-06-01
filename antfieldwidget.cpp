@@ -284,6 +284,20 @@ QVector<QPair<QPoint64, qint64>> AntFieldWidget::getTopVisitedCells(const int co
     return allCells;
 }
 
+QString AntFieldWidget::getRules() const {
+    QString result = "";
+    int cur = 0;
+    for (uint32_t i = 0; i < rules.size(); ++i) {
+        cur++;
+        if ((i < rules.size() - 1 && rules.at(i) != rules.at(i + 1)) || i == rules.size() - 1) {
+            result.append(rules.at(i));
+            result.append(QString::number(cur));
+            cur = 0;
+        }
+    }
+    return result;
+}
+
 bool AntFieldWidget::saveState(const QString &filename) const {
     QMutexLocker locker(&statisticsMutex);
     QFile file(filename);

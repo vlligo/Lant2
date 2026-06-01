@@ -667,7 +667,7 @@ void MainWindow::toggleStatistics(bool enabled) const {
 void MainWindow::saveState() {
     QString defaultName = QString("%1_%2.ant")
         .arg(antField->getRules())
-        .arg(QDateTime::currentDateTime().toString("yyyyMMdd_HHmmss"));
+        .arg(QDateTime::currentDateTime().toString("yyyy-MM-dd_HH:mm:ss"));
 
     QString fileName = QFileDialog::getSaveFileName(
         this, "Save Simulation State", defaultName, "Ant State Files (*.ant);;All Files (*)");
