@@ -4,7 +4,6 @@
 #include <QApplication>
 #include <QCheckBox>
 #include <QComboBox>
-#include <QFileDialog>
 #include <QGridLayout>
 #include <QGroupBox>
 #include <QHBoxLayout>
@@ -416,12 +415,6 @@ void MainWindow::updateRules() {
                 count = qBound(1, numStr.toInt(), 1000000);
             }
 
-            if (count == 1) {
-                compressedRules += currentChar;
-            } else {
-                compressedRules += currentChar + QString::number(count);
-            }
-
             expandedRules += QString(count, currentChar);
         } else {
             i++;
@@ -431,6 +424,18 @@ void MainWindow::updateRules() {
     if (expandedRules.isEmpty()) {
         expandedRules = "LR";
         compressedRules = "L1R1";
+    }
+
+    for (int i = 0; i < expandedRules.size();) {
+        int cnt = 1;
+        compressedRules += expandedRules[i];
+        ++i;
+        while (i < expandedRules.size() && expandedRules[i] == expandedRules[i - 1]) {
+            cnt++;
+            i++;
+        }
+        if (cnt > 1)
+            compressedRules += QString::number(cnt);
     }
 
     if (rulesEdit->text() != compressedRules) {

@@ -291,7 +291,8 @@ QString AntFieldWidget::getRules() const {
         cur++;
         if ((i < rules.size() - 1 && rules.at(i) != rules.at(i + 1)) || i == rules.size() - 1) {
             result.append(rules.at(i));
-            result.append(QString::number(cur));
+            if (cur > 1)
+                result.append(QString::number(cur));
             cur = 0;
         }
     }
