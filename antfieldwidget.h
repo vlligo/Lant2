@@ -52,6 +52,11 @@ struct StatChunk {
     }
 };
 
+struct ChunkData {
+    int64_t cx, cy;
+    Chunk* chunk;
+};
+
 
 // Forward declaration
 struct AntStatisticsSummary;
@@ -143,6 +148,7 @@ private:
 
     // Drawing and state management
     void redrawBuffer();
+    void redrawBufferZoomedOut(long long startCX, long long endCX, long long startCY, long long endCY);
     void updateStateColors();
     QColor stateToColor(uint32_t state) const;
     uint32_t previousState(uint32_t state) const;
@@ -154,6 +160,7 @@ private:
 
     std::unordered_map<ChunkKey, std::unique_ptr<Chunk>, ChunkKeyHash> chunks;
     std::unordered_map<ChunkKey, std::unique_ptr<StatChunk>, ChunkKeyHash> statChunks;
+    std::vector<ChunkData> activeChunkList;
 
     std::vector<uint32_t> nextStateLUT;
     std::vector<int> directionChangeLUT;

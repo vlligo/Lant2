@@ -9,6 +9,9 @@
 #include <QTimer>
 #include <QCursor>
 #include <QDataStream>
+#include <QtConcurrent/QtConcurrentMap>
+#include <atomic>
+#include <QPaintEngine>
 
 #include "QPoint64.h"
 
@@ -84,6 +87,7 @@ void AntFieldWidget::updateStateColors() {
 
 void AntFieldWidget::reset() {
     chunks.clear();
+    activeChunkList.clear();
     if (statisticsEnabled) {
         QMutexLocker locker(&statisticsMutex);
         statChunks.clear();
@@ -131,7 +135,10 @@ void AntFieldWidget::nextStep(const qint64 steps) {
 
     auto fetchChunks = [&]() {
         auto& chunkPtr = chunks[currentKey];
-        if (!chunkPtr) chunkPtr = std::make_unique<Chunk>(Chunk{}); // zero-initialise
+        if (!chunkPtr) {
+            chunkPtr = std::make_unique<Chunk>(Chunk{}); // zero-initialise
+            activeChunkList.push_back({currentKey.cx, currentKey.cy, chunkPtr.get()});
+        }
         currentChunk = chunkPtr.get();
 
         if (statisticsEnabled) {
@@ -167,6 +174,8 @@ void AntFieldWidget::nextStep(const qint64 steps) {
 
         // Statistics update (unchanged, but now safely zero-initialized)
         if (statisticsEnabled && currentStatChunk) {
+            QMutexLocker locker(&statisticsMutex);
+
             currentStatChunk->visits[localIndex]++;
 
             if (currentStatChunk->firstVisitStep[localIndex] == -1) {
@@ -377,7 +386,7 @@ bool AntFieldWidget::loadState(const QString &filename) {
 
     // 2. Restore Chunks
     for (quint64 k = 0; k < numChunks; ++k) {
-        ChunkKey key;
+        ChunkKey key{};
         in >> key.cx >> key.cy;
 
         auto chunk = std::make_unique<Chunk>();
@@ -511,45 +520,7 @@ void AntFieldWidget::redrawBuffer() {
     bool useOptimizedDrawing = (scaledCellSize < 1.0);
 
     if (useOptimizedDrawing) {
-        QImage image(size(), QImage::Format_ARGB32);
-        image.fill(Qt::white);
-        auto pixels = reinterpret_cast<QRgb*>(image.bits());
-        int imageWidth = image.width();
-        int imageHeight = image.height();
-
-        QVector<QRgb> rgbColorCache;
-        for (const QColor &c : stateColorCache) rgbColorCache.append(c.rgb());
-        if (rgbColorCache.isEmpty()) rgbColorCache.append(QColor::fromHsv(0, 200, 230).rgb());
-
-        // Screen-Space Chunk Culling: Only loop over chunks actively visible on screen
-        for (const auto& [key, chunk] : chunks) {
-            if (!chunk) continue;
-            int64_t cx = key.cx;
-            int64_t cy = key.cy;
-            if (cy < startCY || cy > endCY) continue;
-            if (cx < startCX || cx > endCX) continue;
-            for (int ly = 0; ly < CHUNK_SIZE; ++ly) {
-                for (int lx = 0; lx < CHUNK_SIZE; ++lx) {
-                    uint32_t state = chunk->states[(ly << CHUNK_SHIFT) | lx];
-                    if (state > 0) {
-                        int64_t globalX = (cx << CHUNK_SHIFT) + lx;
-                        int64_t globalY = (cy << CHUNK_SHIFT) + ly;
-
-                        qint64 screenX = qFloor(offsetX + static_cast<qreal>(globalX) * scaledCellSize);
-                        qint64 screenY = qFloor(offsetY + static_cast<qreal>(globalY) * scaledCellSize);
-
-                        if (screenX >= 0 && screenX < imageWidth && screenY >= 0 && screenY < imageHeight) {
-                            qint64 pixelIndex = screenY * imageWidth + screenX;
-                            if (pixels[pixelIndex] == 0xFFFFFFFF) {
-                                pixels[pixelIndex] = rgbColorCache[state % rgbColorCache.size()];
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        painter.drawImage(0, 0, image);
-
+        redrawBufferZoomedOut(startCX, endCX, startCY, endCY);
     } else {
         // Render grid
         if (scaledCellSize >= 4) {
@@ -720,6 +691,58 @@ void AntFieldWidget::redrawBuffer() {
         painter.setBrush(Qt::red);
         painter.setPen(Qt::NoPen);
         painter.drawEllipse(antCenter, scaledCellSize / 2, scaledCellSize / 2);
+    }
+}
+
+void AntFieldWidget::redrawBufferZoomedOut(long long startCX, long long endCX, long long startCY, long long endCY) {
+    QImage image(size(), QImage::Format_ARGB32_Premultiplied);
+    image.fill(Qt::white);
+
+    auto* pixels = reinterpret_cast<std::atomic<uint32_t>*>(image.bits());
+    const int imgWidth = image.width();
+    const int imgHeight = image.height();
+    const qreal scaledCellSize = cellSize * zoomFactor;
+
+    std::vector<uint32_t> rgbColorCache;
+    rgbColorCache.reserve(stateColorCache.size());
+    for (const QColor &c : stateColorCache) rgbColorCache.push_back(c.rgb());
+    if (rgbColorCache.empty()) rgbColorCache.push_back(QColor::fromHsv(0, 200, 230).rgb());
+
+    QtConcurrent::blockingMap(activeChunkList, [=, &rgbColorCache](const ChunkData& data) {
+
+        // 1. Thread-local culling
+        // Every thread checks its own subset of chunks.
+        if (data.cx < startCX || data.cx > endCX || data.cy < startCY || data.cy > endCY) {
+            return;
+        }
+
+        const int64_t cx = data.cx;
+        const int64_t cy = data.cy;
+        const Chunk* chunk = data.chunk;
+
+        // 2. Render logic
+        for (int ly = 0; ly < CHUNK_SIZE; ++ly) {
+            for (int lx = 0; lx < CHUNK_SIZE; ++lx) {
+                const uint32_t state = chunk->states[(ly << CHUNK_SHIFT) | lx];
+
+                if (state > 0) {
+                    const int64_t globalX = (cx << CHUNK_SHIFT) + lx;
+                    const int64_t globalY = (cy << CHUNK_SHIFT) + ly;
+
+                    const qint64 screenX = qFloor(offsetX + static_cast<qreal>(globalX) * scaledCellSize);
+                    const qint64 screenY = qFloor(offsetY + static_cast<qreal>(globalY) * scaledCellSize);
+
+                    if (screenX >= 0 && screenX < imgWidth && screenY >= 0 && screenY < imgHeight) {
+                        const qint64 pixelIndex = screenY * imgWidth + screenX;
+                        pixels[pixelIndex].store(rgbColorCache[state % rgbColorCache.size()], std::memory_order_relaxed);
+                    }
+                }
+            }
+        }
+    });
+
+    if (QPainter* activePainter = bufferPixmap.paintEngine()->painter()) {
+        activePainter->drawImage(0, 0, image);
     }
 }
 
