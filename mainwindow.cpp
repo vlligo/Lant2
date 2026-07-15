@@ -15,6 +15,7 @@
 #include <QMessageBox>
 #include <QPushButton>
 #include <QScrollArea>
+#include <QSpinBox>
 #include <QStatusBar>
 #include <QTableWidget>
 #include <QTimer>
@@ -128,6 +129,22 @@ void MainWindow::setupUI() {
     statsCheckBox = new QCheckBox("Track Statistics");
     statsCheckBox->setChecked(true);
     controlLayout->addWidget(statsCheckBox, row, 6);
+
+    row++;
+
+    // Randomize area controls
+    controlLayout->addWidget(new QLabel("Radius:"), row, 0);
+
+    radiusSpin = new QSpinBox();
+    radiusSpin->setRange(1, 100000);
+    radiusSpin->setValue(10);
+    radiusSpin->setSuffix(" cells");
+    radiusSpin->setLocale(QLocale());
+    radiusSpin->setGroupSeparatorShown(true);
+    controlLayout->addWidget(radiusSpin, row, 1);
+
+    randomizeButton = new QPushButton("Randomize Area");
+    controlLayout->addWidget(randomizeButton, row, 2);
 
     row++;
 
@@ -295,6 +312,7 @@ void MainWindow::setupConnections() {
     connect(zoomInButton, &QPushButton::clicked, this, &MainWindow::zoomIn);
     connect(zoomOutButton, &QPushButton::clicked, this, &MainWindow::zoomOut);
     connect(cellSizeButton, &QPushButton::clicked, this, &MainWindow::changeCellSize);
+    connect(randomizeButton, &QPushButton::clicked, this, &MainWindow::randomizeArea);
 
     connect(leftButton,  &QPushButton::clicked, this, [this]() { moveView( 50,   0); });
     connect(rightButton, &QPushButton::clicked, this, [this]() { moveView(-50,   0); });
@@ -346,6 +364,42 @@ void MainWindow::changeStyle() {
     currentStyleIndex = (currentStyleIndex + 1) % 5;
     const auto newStyle = static_cast<AntFieldWidget::DisplayStyle>(currentStyleIndex);
     antField->setDisplayStyle(newStyle);
+}
+
+void MainWindow::randomizeArea() {
+    const qint64 radius = radiusSpin->value();
+
+    // A solid fill needs a fresh 4KB allocation for every 32x32 chunk it
+    // touches; at large radii that adds up to many GB and can push the
+    // system into swapping, which looks like the app "hanging" with low
+    // CPU use (it's actually waiting on disk I/O). Warn before that happens.
+    const qint64 estimatedBytes = AntFieldWidget::estimateRandomizeAreaBytes(radius);
+    constexpr qint64 warnThresholdBytes = 10000LL * 1024 * 1024; // 10000 MB
+
+    if (estimatedBytes > warnThresholdBytes) {
+        const double estimatedGB =
+            static_cast<double>(estimatedBytes) / (1024.0 * 1024.0 * 1024.0);
+        const auto reply = QMessageBox::warning(
+            this, "Large Randomize Area",
+            QString("A radius of %1 needs roughly %2 GB of memory to fill, "
+                    "and may exhaust your system's RAM or take a long time.\n\n"
+                    "Continue anyway?")
+                .arg(QLocale().toString(radius), QLocale().toString(estimatedGB, 'f', 1)),
+            QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+
+        if (reply != QMessageBox::Yes) {
+            statusBar()->showMessage("Randomize cancelled.", 3000);
+            return;
+        }
+    }
+
+    antField->randomizeArea(radius);
+
+    const qint64 side = 2 * radius + 1;
+    statusBar()->showMessage(
+        QString("Randomized a %1x%2 area around the ant.")
+            .arg(QLocale().toString(side), QLocale().toString(side)),
+        3000);
 }
 
 void MainWindow::onMouseOverCell(const qint64 x, const qint64 y) const {

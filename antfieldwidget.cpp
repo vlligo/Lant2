@@ -12,6 +12,8 @@
 #include <QtConcurrent/QtConcurrentMap>
 #include <atomic>
 #include <QPaintEngine>
+#include <QRandomGenerator>
+#include <QThread>
 
 #include "QPoint64.h"
 
@@ -462,6 +464,122 @@ void AntFieldWidget::setZoom(const double zoom) {
     needsRedraw = true;
     update();
     emit zoomChanged(zoomFactor);
+}
+
+qint64 AntFieldWidget::estimateRandomizeAreaBytes(const qint64 radius) {
+    if (radius < 0)
+        return 0;
+
+    // Upper-bound estimate: treats every chunk touched by the square as
+    // needing a fresh allocation. It doesn't check which chunks already
+    // exist (that itself would mean walking millions of entries for a
+    // large radius), so it's deliberately conservative/cheap - O(1).
+    const qint64 side = 2 * radius + 1;
+    const qint64 chunksPerSide = (side + CHUNK_SIZE - 1) / CHUNK_SIZE;
+    const qint64 totalChunks = chunksPerSide * chunksPerSide;
+    return totalChunks * static_cast<qint64>(sizeof(Chunk));
+}
+
+void AntFieldWidget::randomizeArea(const qint64 radius) {
+    if (rules.isEmpty() || radius < 0)
+        return;
+
+    const auto stateCount = static_cast<uint32_t>(rules.length());
+    if (stateCount == 0)
+        return;
+
+    // Helper for safe chunk index (floor division), same as in nextStep().
+    auto chunkIndex = [&](const int64_t coord) -> int64_t {
+        int64_t ci = coord / CHUNK_SIZE;
+        if (coord < 0 && (coord & CHUNK_MASK) != 0) --ci;
+        return ci;
+    };
+
+    const qint64 startX = antX - radius;
+    const qint64 endX = antX + radius;
+    const qint64 startY = antY - radius;
+    const qint64 endY = antY + radius;
+
+    const int64_t startCX = chunkIndex(startX);
+    const int64_t endCX = chunkIndex(endX);
+    const int64_t startCY = chunkIndex(startY);
+    const int64_t endCY = chunkIndex(endY);
+
+    const int64_t chunkCountX = endCX - startCX + 1;
+    const int64_t chunkCountY = endCY - startCY + 1;
+    const auto totalChunkEstimate = static_cast<size_t>(chunkCountX * chunkCountY);
+
+    // Pass 1 (single-threaded): get-or-create every chunk touched by the
+    // area. std::unordered_map insertion isn't thread-safe, so this part
+    // has to run on the calling thread. Reserving capacity up front avoids
+    // repeated rehashing/reallocation while we insert potentially millions
+    // of entries.
+    chunks.reserve(chunks.size() + totalChunkEstimate);
+    activeChunkList.reserve(activeChunkList.size() + totalChunkEstimate);
+
+    std::vector<ChunkData> touchedChunks;
+    touchedChunks.reserve(totalChunkEstimate);
+
+    for (int64_t cy = startCY; cy <= endCY; ++cy) {
+        for (int64_t cx = startCX; cx <= endCX; ++cx) {
+            ChunkKey key{cx, cy};
+            auto &chunkPtr = chunks[key];
+            if (!chunkPtr) {
+                chunkPtr = std::make_unique<Chunk>(Chunk{});
+                activeChunkList.push_back({key.cx, key.cy, chunkPtr.get()});
+            }
+            touchedChunks.push_back({cx, cy, chunkPtr.get()});
+        }
+    }
+
+    // Pass 2: fill each chunk's intersection with the target area.
+    // Each lambda invocation owns its chunk exclusively, so no locking is
+    // needed for the writes themselves — but we still give it a *private*
+    // RNG rather than calling QRandomGenerator::global() from every
+    // worker: global() is a single shared, thread-safe instance, and
+    // hammering it concurrently from many threads causes real contention
+    // (cache-line bouncing on its internal state) that can outweigh the
+    // work being parallelized.
+    auto fillChunk = [=](const ChunkData &data) {
+        const int64_t chunkMinX = data.cx * CHUNK_SIZE;
+        const int64_t chunkMinY = data.cy * CHUNK_SIZE;
+
+        const int64_t localStartX = qMax(startX, chunkMinX) - chunkMinX;
+        const int64_t localEndX = qMin(endX, chunkMinX + CHUNK_SIZE - 1) - chunkMinX;
+        const int64_t localStartY = qMax(startY, chunkMinY) - chunkMinY;
+        const int64_t localEndY = qMin(endY, chunkMinY + CHUNK_SIZE - 1) - chunkMinY;
+
+        QRandomGenerator rng(QRandomGenerator::global()->generate());
+        Chunk *chunk = data.chunk;
+
+        for (int64_t ly = localStartY; ly <= localEndY; ++ly) {
+            const int64_t rowBase = ly << CHUNK_SHIFT;
+            for (int64_t lx = localStartX; lx <= localEndX; ++lx) {
+                chunk->states[rowBase | lx] = rng.bounded(stateCount);
+            }
+        }
+    };
+
+    // A single chunk is at most CHUNK_SIZE*CHUNK_SIZE (1024) cells — a few
+    // KB to write, which a plain loop finishes before the thread pool
+    // could even wake a worker. Only bother going parallel once there are
+    // enough independent chunks to make the scheduling overhead worth it.
+    const int idealThreads = qMax(1, QThread::idealThreadCount());
+    const auto parallelThreshold = static_cast<size_t>(idealThreads) * 4;
+
+    if (touchedChunks.size() < parallelThreshold) {
+        for (const auto &data : touchedChunks) fillChunk(data);
+    } else {
+        QtConcurrent::blockingMap(touchedChunks, fillChunk);
+    }
+
+    if (startX < minX) minX = startX;
+    if (endX > maxX) maxX = endX;
+    if (startY < minY) minY = startY;
+    if (endY > maxY) maxY = endY;
+
+    needsRedraw = true;
+    update();
 }
 
 void AntFieldWidget::centerOnAnt() {

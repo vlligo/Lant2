@@ -50,6 +50,7 @@ private slots:
     void centerOnSelectedStatistic();
     void onMouseOverCell(qint64 x, qint64 y) const;
     void changeStyle();
+    void randomizeArea();
     void startSimulation()const;
     void stopSimulation()const;
     void autoStep()const;
@@ -98,6 +99,8 @@ private:
     QPushButton *upButton{};
     QPushButton *downButton{};
     QPushButton *rightButton{};
+    QSpinBox *radiusSpin{};
+    QPushButton *randomizeButton{};
     QAction *exportAction{};
     QAction *resetStatsAction{};
     QAction *exitAction{};

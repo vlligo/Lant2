@@ -93,6 +93,8 @@ public:
     void nextStep(qint64 steps = 1);
     void setCellSize(int size);
     void setZoom(double zoom);
+    void randomizeArea(qint64 radius);
+    static qint64 estimateRandomizeAreaBytes(qint64 radius) ;
     double getZoom() const { return zoomFactor; }
     int getCellSize() const { return cellSize; }
 
