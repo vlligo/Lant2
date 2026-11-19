@@ -22,6 +22,8 @@ set(PROJECT_SOURCES
     mainwindow.cpp
     mainwindow.h
     antfieldwidget.h
+    diagonalcolordialog.cpp
+    highwayanalysis.cpp
     antfieldwidget.cpp
         QInt64SpinBox.cpp
         QInt64SpinBox.h
@@ -61,4 +63,20 @@ set_target_properties(Lant PROPERTIES
 
 if(QT_VERSION_MAJOR EQUAL 6)
     qt_finalize_executable(Lant)
+endif()
+
+include(CTest)
+if(BUILD_TESTING)
+    add_executable(highwayanalysis_test tests/highwayanalysis_test.cpp highwayanalysis.cpp)
+    set_target_properties(highwayanalysis_test PROPERTIES AUTOMOC OFF AUTOUIC OFF AUTORCC OFF)
+    target_include_directories(highwayanalysis_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    add_test(NAME highwayanalysis COMMAND highwayanalysis_test)
+
+    add_executable(highwaywindow_test tests/highwaywindow_test.cpp mainwindow.cpp QInt64SpinBox.cpp
+                   diagonalcolordialog.cpp antfieldwidget.cpp highwayanalysis.cpp)
+    target_include_directories(highwaywindow_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    target_link_libraries(highwaywindow_test PRIVATE Qt${QT_VERSION_MAJOR}::Widgets Qt${QT_VERSION_MAJOR}::Concurrent)
+    foreach(rule LR RL LLR RRL LLLR LRLR L LLRR)
+        add_test(NAME highwaywindow_${rule} COMMAND highwaywindow_test -platform offscreen ${rule})
+    endforeach()
 endif()

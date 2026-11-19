@@ -1,6 +1,8 @@
 #ifndef ANTFIELDWIDGET_H
 #define ANTFIELDWIDGET_H
 
+#include "highwayanalysis.h"
+#include <QBitArray>
 #include <QWidget>
 #include <QString>
 #include <QColor>
@@ -11,6 +13,7 @@
 #include "QPoint64.h"
 #include <unordered_map>
 #include <vector>
+#include <array>
 #include <memory>
 
 
@@ -39,6 +42,9 @@ constexpr int CHUNK_AREA = CHUNK_SIZE * CHUNK_SIZE;
 // We use uint32_t for state to comfortably hold thousands of rules, avoiding int8_t limits
 struct Chunk {
     uint32_t states[CHUNK_AREA] = {0};
+    std::array<quint8, CHUNK_AREA / 8> readMask{};
+    bool wasRead(int index) const { return readMask[index / 8] & (1u << (index % 8)); }
+    void markRead(int index) { readMask[index / 8] |= 1u << (index % 8); }
 };
 
 struct StatChunk {
@@ -89,6 +95,14 @@ public:
     ~AntFieldWidget() override;
 
     void setRules(const QString &rules_str);
+    const QString &expandedRules() const { return rules; }
+    const QBitArray &diagonalStates() const { return diagonalStateMask; }
+    QColor cellColor(uint32_t state) const;
+    void setDiagonalStates(const QBitArray &states);
+    std::optional<HighwayAnalysis> analyzeHighway() const;
+    void showHighwayWindow(const HighwayAnalysis &highway);
+    void clearHighwayWindow();
+    bool hasCompleteReadHistory() const { return completeReadHistory; }
     void reset();
     void nextStep(qint64 steps = 1);
     void setCellSize(int size);
@@ -122,6 +136,7 @@ public slots:
     void setDisplayStyle(DisplayStyle style);
 
 signals:
+    void highwayWindowCleared();
     void antMoved(qint64 x, qint64 y, int direction, qint64 steps);
     void zoomChanged(double zoom);
     void stepsChanged(qint64 steps);
@@ -152,9 +167,10 @@ private:
     void redrawBuffer();
     void redrawBufferZoomedOut(long long startCX, long long endCX, long long startCY, long long endCY);
     void updateStateColors();
+    void resetDiagonalStates();
     QColor stateToColor(uint32_t state) const;
     uint32_t previousState(uint32_t state) const;
-    uint32_t nextState(uint32_t state) const;
+    void turnAndRecolor(uint32_t &state, int &direction) const;
 
 
     // Mouse position tracking
@@ -173,6 +189,11 @@ private:
     // Optimized statistics: use QMap for ordered access when needed
     // QHash<QPair<qint64, qint64>, CellStatistics> cellStatistics;
     QVector<QColor> stateColorCache;
+
+    std::vector<HighwayWindowCell> highlightedWindow;
+    bool completeReadHistory = true;
+    qint64 lastBoardEdit = 0;
+    std::unordered_map<ChunkKey, decltype(Chunk::readMask), ChunkKeyHash> readsAtEdit;
 
     // Ant state
     qint64 antX = 0, antY = 0;
@@ -213,6 +234,7 @@ private:
 
     // Rules
     QString rules;
+    QBitArray diagonalStateMask;
 
     // Display style
     DisplayStyle currentStyle = JustColors;

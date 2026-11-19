@@ -50,6 +50,7 @@ private slots:
     void centerOnSelectedStatistic();
     void onMouseOverCell(qint64 x, qint64 y) const;
     void changeStyle();
+    void showHighwayAnalysis();
     void randomizeArea();
     void startSimulation()const;
     void stopSimulation()const;
@@ -69,10 +70,13 @@ private:
     QInt64SpinBox* quickStepsSpin{};
     QPushButton *quickStepsButton{};
     QPushButton *styleButton{};
+    QPushButton *diagonalColorsButton{};
     QCheckBox *statsCheckBox{};
     QLabel *zoomLabel{};
     QLabel *stepsLabel{};
     QLabel *statsLabel{};
+    QWidget *highwayPanel{};
+    QLabel *highwayResult{};
     QLabel *uniqueCellsLabel{};
     QLabel *mostVisitedLabel{};
     QLabel *maxVisitsLabel{};

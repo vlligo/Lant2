@@ -1,4 +1,5 @@
 #include "mainwindow.h"
+#include "diagonalcolordialog.h"
 
 #include <QAction>
 #include <QApplication>
@@ -19,6 +20,7 @@
 #include <QStatusBar>
 #include <QTableWidget>
 #include <QTimer>
+#include <algorithm>
 #include <utility>
 #include <QDateTime>
 #include <QFileDialog>
@@ -146,6 +148,10 @@ void MainWindow::setupUI() {
     randomizeButton = new QPushButton("Randomize Area");
     controlLayout->addWidget(randomizeButton, row, 2);
 
+    auto *highwayButton = new QPushButton("Check Highway");
+    controlLayout->addWidget(highwayButton, row, 3);
+    connect(highwayButton, &QPushButton::clicked, this, &MainWindow::showHighwayAnalysis);
+
     row++;
 
     // View controls
@@ -232,6 +238,13 @@ void MainWindow::setupUI() {
 
     controlLayout->addWidget(statsGroup, row, 0, 1, 6);
 
+    diagonalColorsButton = new QPushButton("Diagonal Colors…");
+    controlLayout->addWidget(diagonalColorsButton, row, 6);
+    diagonalColorsButton->hide();
+    connect(diagonalColorsButton, &QPushButton::clicked, this, [this] {
+        chooseDiagonalColors(*antField, this);
+    });
+
     // Style button
     styleButton = new QPushButton("Next Style");
     controlLayout->addWidget(styleButton, row, 7);
@@ -245,6 +258,18 @@ void MainWindow::setupUI() {
     scrollArea->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
 
     mainLayout->addWidget(controlGroup);
+    highwayPanel = new QWidget;
+    auto *highwayLayout = new QHBoxLayout(highwayPanel);
+    highwayLayout->setContentsMargins(4, 0, 4, 0);
+    highwayResult = new QLabel;
+    highwayResult->setWordWrap(true);
+    highwayLayout->addWidget(highwayResult, 1);
+    auto *dismiss = new QPushButton(tr("Dismiss"));
+    highwayLayout->addWidget(dismiss);
+    mainLayout->addWidget(highwayPanel);
+    highwayPanel->hide();
+    connect(dismiss, &QPushButton::clicked, antField, &AntFieldWidget::clearHighwayWindow);
+    connect(antField, &AntFieldWidget::highwayWindowCleared, highwayPanel, &QWidget::hide);
     mainLayout->addWidget(scrollArea, 1);
 
     // Statistics table - HIDDEN BY DEFAULT
@@ -364,6 +389,17 @@ void MainWindow::changeStyle() {
     currentStyleIndex = (currentStyleIndex + 1) % 5;
     const auto newStyle = static_cast<AntFieldWidget::DisplayStyle>(currentStyleIndex);
     antField->setDisplayStyle(newStyle);
+    diagonalColorsButton->setVisible(newStyle == AntFieldWidget::Diagonals);
+}
+
+void MainWindow::showHighwayAnalysis() {
+    stopSimulation();
+    antField->clearHighwayWindow();
+    const auto result = antField->analyzeHighway();
+    highwayResult->setText(result ? tr("Period: %1 steps").arg(result->period) : tr("No highway detected"));
+    highwayPanel->show();
+    centralWidget()->layout()->activate();
+    if (result && result->onsetStep >= 0) antField->showHighwayWindow(*result);
 }
 
 void MainWindow::randomizeArea() {

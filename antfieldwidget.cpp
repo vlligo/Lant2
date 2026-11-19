@@ -11,6 +11,7 @@
 #include <QDataStream>
 #include <QtConcurrent/QtConcurrentMap>
 #include <atomic>
+#include <map>
 #include <QPaintEngine>
 #include <QRandomGenerator>
 #include <QThread>
@@ -59,7 +60,9 @@ AntFieldWidget::~AntFieldWidget() {
 }
 
 void AntFieldWidget::setRules(const QString &rules_str) {
-    this->rules = rules_str.trimmed().toUpper();
+    const auto newRules = rules_str.trimmed().toUpper();
+    const bool changed = rules != newRules;
+    rules = newRules;
     updateStateColors();
 
     // Pre-compile branchless lookup tables (LUTs) for extreme speed
@@ -73,7 +76,25 @@ void AntFieldWidget::setRules(const QString &rules_str) {
         directionChangeLUT[i] = (rule == 'L') ? 3 : 1; // +3 is mathematically equivalent to -1 (Left) in modulo 4
     }
 
+    if (changed) resetDiagonalStates();
     reset();
+}
+
+void AntFieldWidget::resetDiagonalStates() {
+    diagonalStateMask.resize(rules.size());
+    for (uint32_t state = 0; state < nextStateLUT.size(); ++state)
+        diagonalStateMask.setBit(state, rules.at(state) != rules.at(nextStateLUT[state]));
+}
+
+QColor AntFieldWidget::cellColor(uint32_t state) const {
+    return state == 0 ? QColor(Qt::white) : stateToColor(state);
+}
+
+void AntFieldWidget::setDiagonalStates(const QBitArray &states) {
+    if (states.size() != rules.size()) return;
+    diagonalStateMask = states;
+    needsRedraw = true;
+    update();
 }
 
 void AntFieldWidget::updateStateColors() {
@@ -88,6 +109,10 @@ void AntFieldWidget::updateStateColors() {
 }
 
 void AntFieldWidget::reset() {
+    clearHighwayWindow();
+    completeReadHistory = true;
+    lastBoardEdit = 0;
+    readsAtEdit.clear();
     chunks.clear();
     activeChunkList.clear();
     if (statisticsEnabled) {
@@ -117,6 +142,7 @@ void AntFieldWidget::reset() {
 
 void AntFieldWidget::nextStep(const qint64 steps) {
     if (rules.isEmpty() || steps <= 0) return;
+    clearHighwayWindow();
     setUpdatesEnabled(false);
 
     // Helper for safe chunk index (floor division) and local index.
@@ -166,13 +192,11 @@ void AntFieldWidget::nextStep(const qint64 steps) {
         int64_t ly = antY - currentKey.cy * CHUNK_SIZE;
         int64_t localIndex = (ly << CHUNK_SHIFT) | lx;
 
+        currentChunk->markRead(localIndex);
         uint32_t& state = currentChunk->states[localIndex];
         int oldDir = antDir;
 
-        if (state < nextStateLUT.size()) {
-            antDir = (antDir + directionChangeLUT[state]) & 3;
-            state = nextStateLUT[state];
-        }
+        turnAndRecolor(state, antDir);
 
         // Statistics update (unchanged, but now safely zero-initialized)
         if (statisticsEnabled && currentStatChunk) {
@@ -213,6 +237,128 @@ void AntFieldWidget::nextStep(const qint64 steps) {
 
     emit antMoved(antX, antY, antDir, stepCount);
     emit stepsChanged(stepCount);
+}
+
+std::optional<HighwayAnalysis> AntFieldWidget::analyzeHighway() const {
+    if (rules.isEmpty()) return std::nullopt;
+    // Both lookahead and rewind write only to private copies of touched chunks.
+    std::unordered_map<ChunkKey, Chunk, ChunkKeyHash> scratch;
+    auto cellAt = [&](qint64 x, qint64 y) -> uint32_t & {
+        const ChunkKey key{x >> CHUNK_SHIFT, y >> CHUNK_SHIFT};
+        auto [copy, inserted] = scratch.try_emplace(key);
+        if (inserted) {
+            const auto original = chunks.find(key);
+            if (original != chunks.end()) copy->second = *original->second;
+        }
+        return copy->second.states[(y & CHUNK_MASK) * CHUNK_SIZE + (x & CHUNK_MASK)];
+    };
+    auto x = antX, y = antY;
+    int heading = antDir;
+    std::vector<HighwayStep> trace;
+    trace.reserve(highwayPreviewSteps);
+    for (int i = 0; i < highwayPreviewSteps; ++i) {
+        auto &state = cellAt(x, y);
+        const int incoming = heading;
+        turnAndRecolor(state, heading);
+        trace.push_back({(heading - incoming + 4) % 4, heading});
+        x += DIRECTIONS[heading].x;
+        y += DIRECTIONS[heading].y;
+    }
+    auto result = detectHighway(trace);
+    if (!result) return result;
+
+    scratch.clear();
+    x = antX;
+    y = antY;
+    heading = antDir;
+    auto rewind = [&]() -> HighwayStep {
+        const int outgoing = heading;
+        x -= DIRECTIONS[outgoing].x;
+        y -= DIRECTIONS[outgoing].y;
+        auto &state = cellAt(x, y);
+        if (state >= nextStateLUT.size()) return {0, outgoing};
+        state = previousState(state);
+        const int turn = directionChangeLUT[state];
+        heading = (outgoing - turn + 4) % 4;
+        return {turn, outgoing};
+    };
+    const qint64 boundary = std::max<qint64>(0, lastBoardEdit);
+    int phase = 0;
+    qint64 step = stepCount;
+    while (step > boundary) {
+        const int preceding = (phase + result->period - 1) % result->period;
+        if (!(rewind() == trace[preceding])) {
+            // The mismatch is the last transient step. Put its result back.
+            turnAndRecolor(cellAt(x, y), heading);
+            x += DIRECTIONS[heading].x;
+            y += DIRECTIONS[heading].y;
+            break;
+        }
+        --step;
+        phase = preceding;
+    }
+    result->onsetStep = step;
+    result->onsetX = x;
+    result->onsetY = y;
+
+    // Read positions of the periodic path from its first phase. At this
+    // point scratch holds the board colors as they were at the onset.
+    struct Candidate { uint32_t state; bool belongs; };
+    std::map<std::pair<qint64, qint64>, Candidate> candidates;
+    auto fx = x, fy = y;
+    for (int i = 0; i < highwayPreviewSteps; ++i) {
+        const auto [it, inserted] = candidates.try_emplace({fx, fy});
+        if (inserted) {
+            const auto state = cellAt(fx, fy);
+            const auto past = readsAtEdit.find({fx >> CHUNK_SHIFT, fy >> CHUNK_SHIFT});
+            const int index = (fy & CHUNK_MASK) * CHUNK_SIZE + (fx & CHUNK_MASK);
+            const bool alreadyRead = past != readsAtEdit.end() &&
+                                     (past->second[index / 8] & (1u << (index % 8)));
+            it->second = {state, state != 0 || alreadyRead};
+        }
+        const auto delta = DIRECTIONS[trace[phase].heading];
+        fx += delta.x;
+        fy += delta.y;
+        phase = (phase + 1) % result->period;
+    }
+    // A white cell belongs only if the ant had already read it before onset.
+    while (step > boundary) {
+        rewind();
+        auto it = candidates.find({x, y});
+        if (it != candidates.end()) it->second.belongs = true;
+        --step;
+    }
+    if (lastBoardEdit < 0 && (x != 0 || y != 0 || heading != 0)) {
+        // Older saves did not record board edits. Their origin cannot always be recovered.
+        result->onsetStep = -1;
+        return result;
+    }
+    for (const auto &[position, cell] : candidates) {
+        if (cell.belongs) result->window.push_back({position.first, position.second, cell.state});
+    }
+    return result;
+}
+
+void AntFieldWidget::clearHighwayWindow() {
+    highlightedWindow.clear();
+    needsRedraw = true;
+    update();
+    emit highwayWindowCleared();
+}
+
+void AntFieldWidget::showHighwayWindow(const HighwayAnalysis &highway) {
+    highlightedWindow = highway.window;
+    qint64 left = highway.onsetX, right = left, top = highway.onsetY, bottom = top;
+    for (const auto &cell : highlightedWindow) {
+        left = std::min<qint64>(left, cell.x);
+        right = std::max<qint64>(right, cell.x);
+        top = std::min<qint64>(top, cell.y);
+        bottom = std::max<qint64>(bottom, cell.y);
+    }
+    const double fit = std::min(width() / (right - left + 4.0), height() / (bottom - top + 4.0));
+    zoomFactor = qBound(0.00001, std::min(32.0, fit) / cellSize, 50.0);
+    centerOnPoint(left + (right - left) / 2, top + (bottom - top) / 2);
+    emit zoomChanged(zoomFactor);
 }
 
 void AntFieldWidget::setDisplayStyle(DisplayStyle style) {
@@ -350,7 +496,23 @@ bool AntFieldWidget::saveState(const QString &filename) const {
             }
         }
     }
-    return true;
+    // Append display preferences so older readers can still open the simulation.
+    out.writeRawData("DIA1", 4);
+    const auto maskBytes = (diagonalStateMask.size() + 7) / 8;
+    out.writeRawData(diagonalStateMask.bits(), maskBytes);
+    out.writeRawData("WIN1", 4);
+    out << completeReadHistory;
+    for (const auto &[key, chunk] : chunks) {
+        out << key.cx << key.cy;
+        out.writeRawData(reinterpret_cast<const char *>(chunk->readMask.data()), chunk->readMask.size());
+    }
+    out.writeRawData("ORG1", 4);
+    out << lastBoardEdit << static_cast<quint64>(readsAtEdit.size());
+    for (const auto &[key, mask] : readsAtEdit) {
+        out << key.cx << key.cy;
+        out.writeRawData(reinterpret_cast<const char *>(mask.data()), mask.size());
+    }
+    return out.status() == QDataStream::Ok && file.flush();
 }
 
 bool AntFieldWidget::loadState(const QString &filename) {
@@ -386,6 +548,7 @@ bool AntFieldWidget::loadState(const QString &filename) {
     chunks.clear();
     statChunks.clear();
 
+    qint64 recordedVisits = 0;
     // 2. Restore Chunks
     for (quint64 k = 0; k < numChunks; ++k) {
         ChunkKey key{};
@@ -397,6 +560,7 @@ bool AntFieldWidget::loadState(const QString &filename) {
             in >> state;
             chunk->states[i] = state;
         }
+        Chunk &restored = *chunk;
         chunks[key] = std::move(chunk);
 
         bool hasStats;
@@ -405,12 +569,70 @@ bool AntFieldWidget::loadState(const QString &filename) {
             auto sc = std::make_unique<StatChunk>();
             for (int i = 0; i < CHUNK_AREA; ++i) {
                 in >> sc->visits[i];
+                if (sc->visits[i] > 0) {
+                    restored.markRead(i);
+                    recordedVisits += sc->visits[i];
+                }
                 for (int c = 0; c < 4; ++c) in >> sc->corners[i][c];
                 in >> sc->firstVisitStep[i] >> sc->lastVisitStep[i];
             }
             statChunks[key] = std::move(sc);
         }
     }
+
+    if (file.peek(4) == "DIA1") {
+        file.read(4);
+        const auto size = (rules.size() + 7) / 8;
+        const auto bytes = file.read(size);
+        if (bytes.size() == size)
+            diagonalStateMask = QBitArray::fromBits(bytes.constData(), rules.size());
+        else
+            resetDiagonalStates();
+    } else {
+        resetDiagonalStates();
+    }
+
+    completeReadHistory = recordedVisits == stepCount;
+    if (file.peek(4) == "WIN1") {
+        file.read(4);
+        bool savedHistoryComplete = false;
+        in >> savedHistoryComplete;
+        for (quint64 n = 0; n < numChunks; ++n) {
+            ChunkKey key{};
+            in >> key.cx >> key.cy;
+            auto found = chunks.find(key);
+            decltype(Chunk::readMask) mask{};
+            if (found == chunks.end() ||
+                in.readRawData(reinterpret_cast<char *>(mask.data()), mask.size()) != int(mask.size())) {
+                savedHistoryComplete = false;
+                break;
+            }
+            found->second->readMask = mask;
+        }
+        completeReadHistory = completeReadHistory || savedHistoryComplete;
+    }
+
+    lastBoardEdit = -1;
+    if (file.peek(4) == "ORG1") {
+        file.read(4);
+        qint64 edit;
+        quint64 count;
+        in >> edit >> count;
+        if (edit >= -1 && edit <= stepCount && count <= numChunks) {
+            for (quint64 n = 0; n < count && in.status() == QDataStream::Ok; ++n) {
+                ChunkKey key{};
+                in >> key.cx >> key.cy;
+                auto &mask = readsAtEdit[key];
+                in.readRawData(reinterpret_cast<char *>(mask.data()), mask.size());
+            }
+            if (in.status() == QDataStream::Ok) lastBoardEdit = edit;
+            else readsAtEdit.clear();
+        }
+    }
+    // The window can be inspected at any zoom after reopening a snapshot.
+    activeChunkList.reserve(chunks.size());
+    for (const auto &[key, chunk] : chunks)
+        activeChunkList.push_back({key.cx, key.cy, chunk.get()});
 
     needsRedraw = true;
     update();
@@ -495,6 +717,13 @@ void AntFieldWidget::randomizeArea(const qint64 radius) {
         return ci;
     };
 
+    clearHighwayWindow();
+    lastBoardEdit = stepCount;
+    readsAtEdit.clear();
+    for (const auto &[key, chunk] : chunks) {
+        if (std::any_of(chunk->readMask.begin(), chunk->readMask.end(), [](quint8 bits) { return bits != 0; }))
+            readsAtEdit.emplace(key, chunk->readMask);
+    }
     const qint64 startX = antX - radius;
     const qint64 endX = antX + radius;
     const qint64 startY = antY - radius;
@@ -685,7 +914,8 @@ void AntFieldWidget::redrawBuffer() {
     }
 
 
-    if (!useOptimizedDrawing && statisticsEnabled && scaledCellSize >= 8 && currentStyle != JustColors) {
+    const int minimumOverlaySize = currentStyle == Diagonals ? 4 : 8;
+    if (statisticsEnabled && currentStyle != JustColors && scaledCellSize >= minimumOverlaySize) {
         QMutexLocker locker(&statisticsMutex);
         painter.setPen(QPen(Qt::black, 3));
 
@@ -759,7 +989,7 @@ void AntFieldWidget::redrawBuffer() {
                         drawCornerText(cellRect, statChunk->corners[i][2], Qt::AlignRight | Qt::AlignBottom);
                         drawCornerText(cellRect, statChunk->corners[i][3], Qt::AlignLeft | Qt::AlignBottom);
                     } else if (currentStyle == Diagonals) {
-                        if (rules.at(chunk->states[i]) != rules.at(nextState(chunk->states[i]))) {
+                        if (diagonalStateMask.testBit(chunk->states[i])) {
                             if  ((rules.at(previousState(chunk->states[i])) == 'R') ^ ((i % CHUNK_SIZE + i / CHUNK_SIZE) % 2 != 0)) {
                                 painter.drawLine(cellRect.bottomLeft(), cellRect.topRight());
                             } else {
@@ -783,6 +1013,26 @@ void AntFieldWidget::redrawBuffer() {
                 }
             }
         }
+    }
+
+    // Draw each member separately so adjacent cells and holes remain distinguishable.
+    if (!highlightedWindow.empty()) {
+        painter.save();
+        painter.setRenderHint(QPainter::Antialiasing, scaledCellSize < 12);
+        const QPen halo(Qt::white, std::min(3.0, scaledCellSize / 6));
+        const QPen outline(Qt::black, std::min(1.0, scaledCellSize / 12));
+        const qreal inset = std::min(2.0, scaledCellSize * 0.12);
+        painter.setBrush(Qt::NoBrush);
+        for (const auto &cell : highlightedWindow) {
+            QRectF rect(offsetX + cell.x * scaledCellSize, offsetY + cell.y * scaledCellSize,
+                        scaledCellSize, scaledCellSize);
+            rect.adjust(inset, inset, -inset, -inset);
+            painter.setPen(halo);
+            painter.drawRect(rect);
+            painter.setPen(outline);
+            painter.drawRect(rect);
+        }
+        painter.restore();
     }
 
     // Draw ant
@@ -888,8 +1138,11 @@ uint32_t AntFieldWidget::previousState(const uint32_t state) const {
     return state == 0 ? rules.length() - 1 : state - 1;
 }
 
-uint32_t AntFieldWidget::nextState(const uint32_t state) const {
-    return (state + 1) % rules.length();
+void AntFieldWidget::turnAndRecolor(uint32_t &state, int &direction) const {
+    if (state < nextStateLUT.size()) {
+        direction = (direction + directionChangeLUT[state]) & 3;
+        state = nextStateLUT[state];
+    }
 }
 
 void AntFieldWidget::mousePressEvent(QMouseEvent *event) {
