@@ -4,6 +4,8 @@
 #include <QFile>
 #include <QtMath>
 #include <QMouseEvent>
+#include <QNativeGestureEvent>
+#include <QtTest/QTest>
 #include <QLabel>
 #include <QLineEdit>
 #include <QPushButton>
@@ -204,6 +206,74 @@ static QByteArray contents(const QString &path) {
     return file.readAll();
 }
 
+static void verifyPinchZoom() {
+    QWidget window;
+    AntFieldWidget field(&window);
+    window.resize(700, 560);
+    field.setGeometry(75, 50, 600, 480);
+    window.show();
+    QApplication::processEvents();
+    field.centerOnPoint(-100, 200);
+    const QPoint anchor(110, 146);
+    const QPointF global = field.mapToGlobal(anchor);
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    auto *device = QTest::createTouchDevice(QInputDevice::DeviceType::TouchPad);
+#else
+    auto *device = QTest::createTouchDevice(QTouchDevice::TouchPad);
+#endif
+    auto native = [&](Qt::NativeGestureType type, double value) {
+        const QPointF scene = field.mapTo(&window, anchor);
+#if QT_VERSION >= QT_VERSION_CHECK(6, 2, 0)
+        QNativeGestureEvent event(type, device, 2, scene, scene, global, value, {});
+#else
+        QNativeGestureEvent event(type, device, scene, scene, global, value, 0, 0);
+#endif
+        QApplication::sendEvent(window.windowHandle(), &event);
+    };
+    auto verifyAnchor = [&] {
+        QPoint64 cell;
+        QMetaObject::Connection connection = QObject::connect(&field, &AntFieldWidget::mouseOverCell,
+            [&](qint64 x, qint64 y) { cell = {x, y}; });
+        QTest::mouseMove(&field, anchor + QPoint(48, 48));
+        QTest::mouseMove(&field, anchor);
+        QObject::disconnect(connection);
+        require(cell == QPoint64(-132, 184), "pinch anchor mapped to " + std::to_string(cell.x())
+                                             + ", " + std::to_string(cell.y()));
+    };
+    native(Qt::BeginNativeGesture, 0);
+    native(Qt::ZoomNativeGesture, 0.25);
+    native(Qt::RotateNativeGesture, 3);
+    native(Qt::ZoomNativeGesture, -0.125);
+    native(Qt::EndNativeGesture, 0);
+    require(field.getZoom() == 1.25 * 0.875, "native pinch scale or direction is wrong");
+    verifyAnchor();
+
+    native(Qt::ZoomNativeGesture, 100);
+    require(field.getZoom() == 50, "pinch exceeded zoom limit");
+    native(Qt::ZoomNativeGesture, -0.5);
+    require(field.getZoom() == 25, "reversing pinch at the limit failed");
+
+#ifndef Q_OS_MACOS
+    field.setZoom(1);
+    field.centerOnPoint(-100, 200);
+    auto touch = QTest::touchEvent(&field, device, false);
+    auto spread = [&](int radius) {
+        touch.move(0, anchor - QPoint(radius, 0), &field)
+             .move(1, anchor + QPoint(radius, 0), &field).commit();
+    };
+    touch.press(0, anchor - QPoint(19, 0), &field)
+         .press(1, anchor + QPoint(19, 0), &field).commit();
+    spread(20); // Establish the recognizer's initial distance.
+    spread(25);
+    spread(30);
+    spread(24);
+    touch.release(0, anchor - QPoint(24, 0), &field)
+         .release(1, anchor + QPoint(24, 0), &field).commit();
+    require(qFuzzyCompare(field.getZoom(), 1.2), "touch pinch or finger lift applied the wrong scale");
+    verifyAnchor();
+#endif
+}
+
 static void verifyAuditFixes() {
     QTemporaryDir dir;
     AntFieldWidget field;
@@ -342,6 +412,7 @@ int main(int argc, char **argv) {
         require(argc == 2, "missing rule");
         if (std::string(argv[1]) == "runs-and-rankings") verifyRunsAndRankings();
         else if (std::string(argv[1]) == "audit-fixes") verifyAuditFixes();
+        else if (std::string(argv[1]) == "pinch-zoom") verifyPinchZoom();
         else run(argv[1]);
     } catch (const std::exception &e) {
         std::cerr << argv[argc - 1] << ": " << e.what() << '\n';

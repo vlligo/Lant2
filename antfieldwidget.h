@@ -162,6 +162,7 @@ signals:
     void mouseOverCell(qint64 x, qint64 y);
 
 protected:
+    bool event(QEvent *event) override;
     void paintEvent(QPaintEvent *event) override;
     void mousePressEvent(QMouseEvent *event) override;
     void mouseMoveEvent(QMouseEvent *event) override;
@@ -177,6 +178,8 @@ protected:
 
 private:
     // Coordinate conversion
+    void setZoomAt(double zoom, const QPointF &anchor);
+    void applyPinch(double scale, const QPointF &globalCenter);
     QPoint64 screenToField(const QPoint64 &screenPos) const;
     double screenX(qint64 x) const;
     double screenY(qint64 y) const;

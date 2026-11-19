@@ -72,7 +72,7 @@ cmake --build .
    - **Reset**: Clear simulation and statistics
 
 3. **View Controls**:
-   - **Zoom**: Mouse wheel or buttons
+   - **Zoom** with a two-finger trackpad pinch, the mouse wheel, or the zoom buttons.
    - **Pan**: Click and drag
    - **Center**: Center on ant, most visited cell, or coordinates
    - **Navigation**: Arrow buttons for precise view movement
@@ -89,7 +89,9 @@ Open **Diagonal Colors…** from any display style to choose which colors show l
 
 **Check Highway** pauses the run and checks in the background. Dismiss the check or resume stepping to cancel it. When it finishes, the panel displays the detected period. It checks turns and headings over a 65,536-step preview, then traces the repeating motion back to its first step since the last board edit. The outlined cells are the cells read from the past at that starting point. The same outlines work in every display style. Dismiss them or advance the simulation to clear them.
 
-### Mouse Interaction
+### Mouse and trackpad
+
+- **Pinch** over the field. Spread two fingers to zoom in or bring them together to zoom out around the gesture center.
 - **Hover**: Shows cell coordinates in status bar
 - **Click+Drag**: Pan the view
 - **Wheel**: Zoom in/out centered on cursor

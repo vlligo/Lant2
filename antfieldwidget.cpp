@@ -1,6 +1,8 @@
 #include "antfieldwidget.h"
 #include <QPainter>
 #include <QWheelEvent>
+#include <QNativeGestureEvent>
+#include <QPinchGesture>
 #include <QApplication>
 #include <QtMath>
 #include <QFile>
@@ -47,6 +49,10 @@ AntFieldWidget::AntFieldWidget(QWidget *parent)
     : QWidget(parent) {
     setMinimumSize(400, 400);
     setMouseTracking(true);
+#ifndef Q_OS_MACOS
+    // Cocoa already sends native magnification events for trackpad pinches.
+    grabGesture(Qt::PinchGesture);
+#endif
     reset();
 
     mouseUpdateTimer = new QTimer(this);
@@ -837,10 +843,15 @@ void AntFieldWidget::setCellSize(const int size) {
 }
 
 void AntFieldWidget::setZoom(const double zoom) {
+    setZoomAt(zoom, QPointF(width() / 2.0, height() / 2.0));
+}
+
+void AntFieldWidget::setZoomAt(double zoom, const QPointF &anchor) {
     const double newZoom = qBound(0.00001, zoom, 50.0);
+    if (newZoom == zoomFactor) return;
     const double ratio = newZoom / zoomFactor;
-    offsetX = width() / 2.0 + (offsetX - width() / 2.0) * ratio;
-    offsetY = height() / 2.0 + (offsetY - height() / 2.0) * ratio;
+    offsetX = anchor.x() + (offsetX - anchor.x()) * ratio;
+    offsetY = anchor.y() + (offsetY - anchor.y()) * ratio;
     zoomFactor = newZoom;
     needsRedraw = true;
     update();
@@ -1358,17 +1369,47 @@ void AntFieldWidget::mouseReleaseEvent(QMouseEvent *event) {
     }
 }
 
-void AntFieldWidget::wheelEvent(QWheelEvent *event) {
-    constexpr double zoomStep = 1.2;
-    const double oldZoom = zoomFactor;
-    double newZoom = zoomFactor;
+void AntFieldWidget::applyPinch(double scale, const QPointF &globalCenter) {
+    if (scale > 0 && std::isfinite(scale))
+        setZoomAt(zoomFactor * scale, globalCenter - mapToGlobal(QPoint(0, 0)));
+}
 
-    if (event->angleDelta().y() > 0) {
-        newZoom *= zoomStep;
-    } else {
-        newZoom /= zoomStep;
+bool AntFieldWidget::event(QEvent *event) {
+    if (event->type() == QEvent::NativeGesture) {
+        auto *gesture = static_cast<QNativeGestureEvent *>(event);
+        if (gesture->gestureType() == Qt::ZoomNativeGesture) {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+            const QPointF center = gesture->globalPosition();
+#else
+            const QPointF center = gesture->screenPos();
+#endif
+            applyPinch(1.0 + gesture->value(), center);
+            event->accept();
+            return true;
+        }
+    } else if (event->type() == QEvent::Gesture) {
+        auto *gestures = static_cast<QGestureEvent *>(event);
+        auto *pinch = static_cast<QPinchGesture *>(gestures->gesture(Qt::PinchGesture));
+        if (pinch) {
+            // The recognizer can repeat its last scale when the fingers lift.
+            if ((pinch->state() == Qt::GestureStarted || pinch->state() == Qt::GestureUpdated)
+                && pinch->changeFlags().testFlag(QPinchGesture::ScaleFactorChanged))
+                applyPinch(pinch->scaleFactor(), pinch->centerPoint());
+            gestures->accept(pinch);
+            return true;
+        }
     }
+    return QWidget::event(event);
+}
 
+void AntFieldWidget::wheelEvent(QWheelEvent *event) {
+    const int delta = event->angleDelta().y();
+    if (delta == 0) {
+        event->ignore();
+        return;
+    }
+    constexpr double zoomStep = 1.2;
+    const double newZoom = delta > 0 ? zoomFactor * zoomStep : zoomFactor / zoomStep;
     if (newZoom < 0.00001 || newZoom > 50.0) return;
 
 #if QT_VERSION >= QT_VERSION_CHECK(5, 14, 0)
@@ -1377,17 +1418,7 @@ void AntFieldWidget::wheelEvent(QWheelEvent *event) {
     const QPointF mousePos = event->posF();
 #endif
 
-    const double zoomRatio = newZoom / oldZoom;
-
-    offsetX = mousePos.x() - (mousePos.x() - offsetX) * zoomRatio;
-    offsetY = mousePos.y() - (mousePos.y() - offsetY) * zoomRatio;
-
-    zoomFactor = newZoom;
-
-    needsRedraw = true;
-    update();
-
-    emit zoomChanged(zoomFactor);
+    setZoomAt(newZoom, mousePos);
 }
 
 void AntFieldWidget::resizeEvent(QResizeEvent *event) {
