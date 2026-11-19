@@ -238,9 +238,8 @@ void MainWindow::setupUI() {
 
     controlLayout->addWidget(statsGroup, row, 0, 1, 6);
 
-    diagonalColorsButton = new QPushButton("Diagonal Colors…");
+    auto *diagonalColorsButton = new QPushButton("Diagonal Colors…");
     controlLayout->addWidget(diagonalColorsButton, row, 6);
-    diagonalColorsButton->hide();
     connect(diagonalColorsButton, &QPushButton::clicked, this, [this] {
         chooseDiagonalColors(*antField, this);
     });
@@ -389,7 +388,6 @@ void MainWindow::changeStyle() {
     currentStyleIndex = (currentStyleIndex + 1) % 5;
     const auto newStyle = static_cast<AntFieldWidget::DisplayStyle>(currentStyleIndex);
     antField->setDisplayStyle(newStyle);
-    diagonalColorsButton->setVisible(newStyle == AntFieldWidget::Diagonals);
 }
 
 void MainWindow::showHighwayAnalysis() {

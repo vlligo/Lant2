@@ -84,7 +84,7 @@ cmake --build .
 
 ### Diagonals and highways
 
-Cycle **Next Style** to **Diagonals**, then open **Diagonal Colors…**. Each checkbox corresponds to one step in the expanded rule and shows the color left on the cell after that turn. The last step returns the cell to white (color 0). The selection applies immediately after **OK**, including to previously tracked cells, and is included in saved states. Keep **Track Statistics** enabled and use a zoom of at least four pixels per cell to see the lines.
+Open **Diagonal Colors…** from any display style to choose which colors show lines in **Diagonals**. Each checkbox corresponds to one step in the expanded rule and shows the color left on the cell after that turn. The last step returns the cell to white (color 0). The selection applies immediately after **OK**, including to previously tracked cells, and is included in saved states. Keep **Track Statistics** enabled and use a zoom of at least four pixels per cell to see the lines.
 
 **Check Highway** pauses the run and displays the detected period. It checks turns and headings over a 65,536-step preview, then traces the repeating motion back to its first step since the last board edit. The outlined cells are the cells read from the past at that starting point. The same outlines work in every display style. Dismiss them or advance the simulation to clear them.
 

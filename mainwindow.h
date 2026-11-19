@@ -70,7 +70,6 @@ private:
     QInt64SpinBox* quickStepsSpin{};
     QPushButton *quickStepsButton{};
     QPushButton *styleButton{};
-    QPushButton *diagonalColorsButton{};
     QCheckBox *statsCheckBox{};
     QLabel *zoomLabel{};
     QLabel *stepsLabel{};
