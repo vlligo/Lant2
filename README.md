@@ -30,7 +30,7 @@ A Qt-based implementation of Langton's Ant with advanced visualization, statisti
 
 ## Requirements
 
-- **Qt 6.10.1** (compatible with Qt 5+)
+- **Qt 6** or **Qt 5** (tested with 6.10 and 5.15)
 - **CMake 3.16** or higher
 - **C++17** compatible compiler
 - **Ninja** build system (recommended)
@@ -40,21 +40,21 @@ A Qt-based implementation of Langton's Ant with advanced visualization, statisti
 ### Linux
 ```bash
 mkdir build && cd build
-cmake -DCMAKE_PREFIX_PATH=/path/to/qt -DCMAKE_GENERATOR:STRING=Ninja ..
+cmake -DCMAKE_PREFIX_PATH=/path/to/qt -G Ninja -DCMAKE_BUILD_TYPE=Release ..
 cmake --build .
 ```
 
 ### Windows
 ```bash
 mkdir build && cd build
-cmake -G "Ninja" -DCMAKE_PREFIX_PATH="C:\Qt\6.10.1\msvc2019_64" ..
+cmake -G "Ninja" -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="C:\Qt\6.10.1\msvc2019_64" ..
 cmake --build .
 ```
 
 ### macOS
 ```bash
 mkdir build && cd build
-cmake -DCMAKE_PREFIX_PATH="/Users/username/Qt/6.10.1/clang_64" ..
+cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="/Users/username/Qt/6.10.1/clang_64" ..
 cmake --build .
 ```
 
@@ -67,7 +67,8 @@ cmake --build .
 
 2. **Simulation**:
    - **Step**: Take one simulation step
-   - **Run**: Execute multiple steps at once
+   - **Run** advances the requested number of steps and updates the view during longer runs.
+   - **Start** runs continuously. **Stop** pauses either mode at the current step.
    - **Reset**: Clear simulation and statistics
 
 3. **View Controls**:
@@ -79,14 +80,14 @@ cmake --build .
 4. **Statistics**:
    - Toggle statistics tracking
    - View top visited cells in table
-   - Export data to CSV
+   - Choose **File → Export visit statistics to CSV…** to save visit counts, first and last visit steps, and the four corner counts for each tracked cell.
    - Show detailed statistics dialog
 
 ### Diagonals and highways
 
 Open **Diagonal Colors…** from any display style to choose which colors show lines in **Diagonals**. Each checkbox corresponds to one step in the expanded rule and shows the color left on the cell after that turn. The last step returns the cell to white (color 0). The selection applies immediately after **OK**, including to previously tracked cells, and is included in saved states. Keep **Track Statistics** enabled and use a zoom of at least four pixels per cell to see the lines.
 
-**Check Highway** pauses the run and displays the detected period. It checks turns and headings over a 65,536-step preview, then traces the repeating motion back to its first step since the last board edit. The outlined cells are the cells read from the past at that starting point. The same outlines work in every display style. Dismiss them or advance the simulation to clear them.
+**Check Highway** pauses the run and checks in the background. Dismiss the check or resume stepping to cancel it. When it finishes, the panel displays the detected period. It checks turns and headings over a 65,536-step preview, then traces the repeating motion back to its first step since the last board edit. The outlined cells are the cells read from the past at that starting point. The same outlines work in every display style. Dismiss them or advance the simulation to clear them.
 
 ### Mouse Interaction
 - **Hover**: Shows cell coordinates in status bar

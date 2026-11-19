@@ -2,6 +2,8 @@
 
 #include <QApplication>
 #include <QFile>
+#include <QtMath>
+#include <QMouseEvent>
 #include <QLabel>
 #include <QLineEdit>
 #include <QPushButton>
@@ -75,8 +77,13 @@ static void click(MainWindow &w, const QString &text) {
 }
 
 static bool shows(MainWindow &w, const QString &text) {
-    for (const auto *label : w.findChildren<QLabel*>())
-        if (label->isVisible() && label->text() == text) return true;
+    QElapsedTimer timeout;
+    timeout.start();
+    do {
+        QApplication::processEvents(QEventLoop::AllEvents, 5);
+        for (const auto *label : w.findChildren<QLabel*>())
+            if (label->isVisible() && label->text() == text) return true;
+    } while (timeout.elapsed() < 5000);
     return false;
 }
 
@@ -129,6 +136,142 @@ static void verifyEditedBoard(AntFieldWidget &field, const QString &path) {
     verify(field, edited, expected);
 }
 
+static void waitForSteps(AntFieldWidget &field, qint64 target) {
+    QElapsedTimer timeout;
+    timeout.start();
+    while (field.getTotalVisitedCells() < target && timeout.elapsed() < 5000)
+        QApplication::processEvents(QEventLoop::AllEvents, 5);
+    require(field.getTotalVisitedCells() == target, "finite run missed its target");
+}
+
+static void verifyRunsAndRankings() {
+    MainWindow window;
+    window.show();
+    QApplication::processEvents();
+    auto &field = *window.findChild<AntFieldWidget *>();
+    auto *steps = window.findChild<QInt64SpinBox *>();
+    auto checkRanking = [&] {
+        // Requests above the cache capacity use a full scan of the visit counters.
+        const auto expected = field.getTopVisitedCells(21).mid(0, 20);
+        require(field.getTopVisitedCells(20) == expected, "incorrect top 20");
+        require(field.getTopVisitedCells(7) == expected.mid(0, 7), "incorrect cached prefix");
+    };
+    steps->setValue(1000123);
+    click(window, "Run");
+    waitForSteps(field, steps->value());
+    checkRanking();
+    QTemporaryDir dir;
+    const auto path = dir.filePath("rankings.ant");
+    // A small snapshot also exercises rebuilding the cache from the save format.
+    click(window, "Reset");
+    require(field.getTopVisitedCells(20).isEmpty(), "reset retained old ranking");
+    field.nextStep(18000);
+    checkRanking();
+    const auto saved = field.getTopVisitedCells(20);
+    require(field.saveState(path), "ranking snapshot save failed");
+    field.nextStep(12345);
+    checkRanking();
+    field.resetStatistics();
+    require(field.getTopVisitedCells(20).isEmpty(), "statistics reset retained old ranking");
+    require(field.loadState(path) && field.getTopVisitedCells(20) == saved, "incorrect restored ranking");
+    field.setStatisticsEnabled(false);
+    field.nextStep(1000);
+    require(field.getTopVisitedCells(20).isEmpty(), "disabled tracking retained old ranking");
+    field.setStatisticsEnabled(true);
+    field.nextStep(20000);
+    checkRanking();
+
+    steps->setValue(5000000);
+    const auto target = field.getTotalVisitedCells() + steps->value();
+    click(window, "Run");
+    click(window, "Stop");
+    const auto stopped = field.getTotalVisitedCells();
+    require(stopped < target, "large Run blocked until completion");
+    QApplication::processEvents();
+    require(field.getTotalVisitedCells() == stopped, "finite run continued after Stop");
+    click(window, "Start");
+    click(window, "Stop");
+    require(field.getTotalVisitedCells() > stopped, "continuous run failed to advance");
+    click(window, "Run");
+    click(window, "Reset");
+    QApplication::processEvents();
+    require(field.getTotalVisitedCells() == 0, "pending run survived a reset");
+}
+
+static QByteArray contents(const QString &path) {
+    QFile file(path);
+    require(file.open(QIODevice::ReadOnly), "cannot read test output");
+    return file.readAll();
+}
+
+static void verifyAuditFixes() {
+    QTemporaryDir dir;
+    AntFieldWidget field;
+    field.resize(640, 480);
+    field.setRules("LR");
+    field.nextStep(20000);
+    field.resetStatistics();
+    field.nextStep();
+    require(field.getStatisticsSummary().averageVisits == 1, "average includes untracked steps");
+    require(field.estimateRandomizeAreaBytes(1) >= 4 * qint64(sizeof(Chunk)), "chunk alignment missing");
+
+    const auto path = dir.filePath("source.ant");
+    require(field.saveState(path), "could not save initial state");
+    const auto original = contents(path);
+    const auto partial = dir.filePath("partial.ant");
+    const auto roundTrip = dir.filePath("current.ant");
+    for (int length : {0, 10, int(original.size() / 2), int(original.size() - 1)}) {
+        QFile file(partial);
+        require(file.open(QIODevice::WriteOnly) && file.write(original.left(length)) == length,
+                "could not simulate interrupted write");
+        file.close();
+        require(!field.loadState(partial), "incomplete snapshot accepted");
+        require(field.saveState(roundTrip) && contents(roundTrip) == original, "failed load changed live board");
+    }
+    field.nextStep(300);
+    require(field.loadState(path) && field.getStatisticsSummary().averageVisits == 1, "lost tracked visit count");
+    const auto csv = dir.filePath("visits.csv");
+    require(field.exportStatistics(csv), "CSV export failed");
+    const auto lines = contents(csv).trimmed().split('\n');
+    require(lines.size() == 2 && lines[1].split(',').value(2) == "1", "unexpected CSV rows");
+
+    field.setRules("LLRRLR");
+    field.randomizeArea(96);
+    field.setZoom(0.071);
+    field.centerOnPoint(0, 0);
+    const auto still = field.grab().toImage();
+    for (int i = 0; i < 12; ++i) {
+        field.centerOnPoint(0, 0);
+        require(field.grab().toImage() == still, "stationary board flickers");
+    }
+    field.setZoom(1.0);
+    qint64 mouseX = 0, mouseY = 0;
+    QObject::connect(&field, &AntFieldWidget::mouseOverCell, [&](qint64 x, qint64 y) {
+        mouseX = x; mouseY = y;
+    });
+    for (qint64 value : {std::numeric_limits<qint64>::min(), std::numeric_limits<qint64>::max()}) {
+        field.centerOnPoint(value, value);
+        require(field.saveState(path), "camera save failed");
+        field.centerOnPoint(0, 0);
+        require(field.loadState(path), "camera restore failed");
+        field.grab();
+        const QPointF center(field.width() / 2, field.height() / 2);
+        QMouseEvent move(QEvent::MouseMove, center, center, center, Qt::NoButton, Qt::NoButton, Qt::NoModifier);
+        QApplication::sendEvent(&field, &move);
+        require(mouseX == value && mouseY == value, "lost 64-bit camera precision");
+    }
+
+    field.setRules("LR");
+    field.setStatisticsEnabled(false);
+    field.nextStep(1000000);
+    int completions = 0;
+    QObject::connect(&field, &AntFieldWidget::highwayChecked, [&](int) { ++completions; });
+    field.startHighwayCheck();
+    field.reset();
+    QApplication::processEvents();
+    require(completions == 0 && field.getTotalVisitedCells() == 0, "stale analysis survived reset");
+}
+
 static void run(const std::string &rule) {
     const std::map<std::string, Fixture> fixtures{{"LR",{9977,104}}, {"RL",{9977,104}}, {"LLR",{39,18}},
                                                 {"RRL",{39,18}}, {"LLLR",{79,52}}, {"LRLR",{9977,104}}};
@@ -143,7 +286,9 @@ static void run(const std::string &rule) {
     require(field->expandedRules().toStdString() == rule, "rule was not applied");
     auto runSteps = [&](int steps) {
         w.findChild<QInt64SpinBox*>()->setValue(steps);
+        const auto target = field->getTotalVisitedCells() + steps;
         click(w, "Run");
+        waitForSteps(*field, target);
     };
     if (!fixtures.count(rule)) {
         runSteps(15000);
@@ -195,7 +340,9 @@ int main(int argc, char **argv) {
     QApplication app(argc, argv);
     try {
         require(argc == 2, "missing rule");
-        run(argv[1]);
+        if (std::string(argv[1]) == "runs-and-rankings") verifyRunsAndRankings();
+        else if (std::string(argv[1]) == "audit-fixes") verifyAuditFixes();
+        else run(argv[1]);
     } catch (const std::exception &e) {
         std::cerr << argv[argc - 1] << ": " << e.what() << '\n';
         return 1;

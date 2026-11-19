@@ -60,6 +60,7 @@ void MainWindow::setupUI() {
     QMenu* fileMenu = menuBar()->addMenu("&File");
     saveAction = fileMenu->addAction("&Save State");
     loadAction = fileMenu->addAction("&Load State");
+    exportAction = fileMenu->addAction(tr("Export visit statistics to CSV…"));
     fileMenu->addSeparator();
     exitAction = fileMenu->addAction("E&xit");
 
@@ -268,6 +269,11 @@ void MainWindow::setupUI() {
     mainLayout->addWidget(highwayPanel);
     highwayPanel->hide();
     connect(dismiss, &QPushButton::clicked, antField, &AntFieldWidget::clearHighwayWindow);
+    connect(antField, &AntFieldWidget::stateAboutToLoad, this, &MainWindow::cancelFiniteRun);
+    connect(antField, &AntFieldWidget::highwayChecked, this, [this](int period) {
+        highwayResult->setText(period ? tr("Period: %1 steps").arg(period) : tr("No highway detected"));
+        this->centralWidget()->layout()->activate();
+    });
     connect(antField, &AntFieldWidget::highwayWindowCleared, highwayPanel, &QWidget::hide);
     mainLayout->addWidget(scrollArea, 1);
 
@@ -302,6 +308,12 @@ void MainWindow::setupConnections() {
         antField->resetStatistics();
         updateQuickStatistics();  // Update quick stats immediately
         updateStatisticsTable();
+    });
+    connect(exportAction, &QAction::triggered, this, [this] {
+        const auto path = QFileDialog::getSaveFileName(this, tr("Export visit statistics"),
+                                                      "visits.csv", tr("CSV files (*.csv)"));
+        if (!path.isEmpty() && !antField->exportStatistics(path))
+            QMessageBox::critical(this, tr("Export error"), tr("Could not save the statistics file."));
     });
     connect(exitAction, &QAction::triggered, this, &QMainWindow::close);
 
@@ -365,6 +377,7 @@ void MainWindow::setupConnections() {
             [this]() {
                 const bool visible = !statsTableGroup->isVisible();
                 statsTableGroup->setVisible(visible);
+                if (visible) updateStatisticsTable();
                 togglePanelButton->setText(visible ? "Hide Statistics Panel"
                                                    : "Show Statistics Panel");
             });
@@ -392,12 +405,9 @@ void MainWindow::changeStyle() {
 
 void MainWindow::showHighwayAnalysis() {
     stopSimulation();
-    antField->clearHighwayWindow();
-    const auto result = antField->analyzeHighway();
-    highwayResult->setText(result ? tr("Period: %1 steps").arg(result->period) : tr("No highway detected"));
+    antField->startHighwayCheck();
+    highwayResult->setText(tr("Checking highway…"));
     highwayPanel->show();
-    centralWidget()->layout()->activate();
-    if (result && result->onsetStep >= 0) antField->showHighwayWindow(*result);
 }
 
 void MainWindow::randomizeArea() {
@@ -427,6 +437,7 @@ void MainWindow::randomizeArea() {
         }
     }
 
+    cancelFiniteRun();
     antField->randomizeArea(radius);
 
     const qint64 side = 2 * radius + 1;
@@ -437,7 +448,7 @@ void MainWindow::randomizeArea() {
 }
 
 void MainWindow::onMouseOverCell(const qint64 x, const qint64 y) const {
-        QString pattern = ((x + y) % 2 == 0) ? "Vertical" : "Horizontal";
+        QString pattern = (((x ^ y) & 1) == 0) ? "Vertical" : "Horizontal";
     coordinateLabel->setText(
         QString("Mouse: (%1; %2) [%3]").arg(QLocale().toString(x), QLocale().toString((y)), pattern));
 }
@@ -511,7 +522,6 @@ void MainWindow::updateRules() {
 
     if (expandedRules.isEmpty()) {
         expandedRules = "LR";
-        compressedRules = "L1R1";
     }
 
     for (int i = 0; i < expandedRules.size();) {
@@ -530,6 +540,7 @@ void MainWindow::updateRules() {
         rulesEdit->setText(compressedRules);
     }
 
+    cancelFiniteRun();
     antField->setRules(expandedRules);
     rulesLabel->setText("Rules: " + compressedRules);
 
@@ -547,25 +558,20 @@ void MainWindow::onAntMoved(const qint64 x, const qint64 y, const int direction,
                                      QLocale().toString(steps)));
 }
 
-void MainWindow::updateStatisticsTable() const {
-    if (!statsCheckBox->isChecked()) {
-        statsTable->clearContents();
-        statsTable->setRowCount(0);
-        return;
-    }
-
-    auto topCells = antField->getTopVisitedCells(20);
+void MainWindow::updateStatisticsTable() {
+    auto topCells = antField->getTopVisitedCells(cachedRankCount);
+    if (topCells == displayedTopCells) return;
+    displayedTopCells = topCells;
     statsTable->setRowCount(static_cast<int>(topCells.size()));
 
     for (int i = 0; i < topCells.size(); ++i) {
         const auto& cell = topCells[i];
         const int64_t visitCount = cell.second;
 
-        statsTable->setItem(
-            i, 0,
-            new QTableWidgetItem(
-                QString("(%1, %2)").arg(QLocale().toString(cell.first.x()),
-                    QLocale().toString(cell.first.y()))));
+        auto *position = new QTableWidgetItem(QString("(%1, %2)").arg(
+            QLocale().toString(cell.first.x()), QLocale().toString(cell.first.y())));
+        position->setData(Qt::UserRole, QVariant::fromValue(cell.first));
+        statsTable->setItem(i, 0, position);
         statsTable->setItem(i, 1,
                             new QTableWidgetItem(QString::number(visitCount)));
 
@@ -581,11 +587,11 @@ void MainWindow::takeStep() const {
 void MainWindow::onQuickStepsClicked() {
     const qint64 steps = quickStepsSpin->value();
     lastCustomSteps = steps;
-    antField->nextStep(steps);
-    updateQuickStatistics();  // Update stats immediately after steps
+    beginRun(steps);
 }
 
-void MainWindow::resetSimulation() const {
+void MainWindow::resetSimulation() {
+    cancelFiniteRun();
     antField->reset();
     updateQuickStatistics();  // Update quick stats immediately
     updateStatisticsTable();
@@ -628,18 +634,7 @@ void MainWindow::centerOnCoordinates() {
 void MainWindow::centerOnTableCell() {
     if (const int row = statsTable->currentRow();row >= 0) {
         if (const QTableWidgetItem* item = statsTable->item(row, 0)) {
-            QString text = item->text();
-            // Extract coordinates from format like "(x, y)"
-            text = text.mid(1, text.length() - 2);  // Remove parentheses
-            QStringList coords = text.split(',');
-            if (coords.size() == 2) {
-                bool xOk, yOk;
-                long long x = coords[0].trimmed().toLongLong(&xOk);
-                long long y = coords[1].trimmed().toLongLong(&yOk);
-                if (xOk && yOk) {
-                    antField->centerOnPoint(x, y);
-                }
-            }
+            antField->centerOnPoint(item->data(Qt::UserRole).value<QPoint64>());
         }
     } else {
         QMessageBox::information(
@@ -744,16 +739,13 @@ void MainWindow::showStatistics() {
     QMessageBox::information(this, "Detailed Statistics", statsText);
 }
 
-void MainWindow::toggleStatistics(bool enabled) const {
+void MainWindow::toggleStatistics(bool enabled) {
     antField->setStatisticsEnabled(enabled);
     updateQuickStatistics();  // Update immediately when toggled
 
     if (!enabled) {
         statsLabel->clear();
-        if (statsTableGroup->isVisible()) {
-            statsTable->clearContents();
-            statsTable->setRowCount(0);
-        }
+        updateStatisticsTable();
     }
 }
 
@@ -828,22 +820,48 @@ void MainWindow::showCellDetails() {
     }
 }
 
-void MainWindow::startSimulation()const {
+void MainWindow::startSimulation() {
+    beginRun(std::nullopt);
+}
+
+void MainWindow::beginRun(std::optional<qint64> steps) {
+    remainingSteps = steps;
+    antField->clearHighwayWindow();
     startButton->setEnabled(false);
+    quickStepsButton->setEnabled(false);
+    stepButton->setEnabled(false);
     stopButton->setEnabled(true);
-
+    lastFrame.start();
     autoRunTimer->start(0);
+    autoStep(); // Short finite runs can finish in the first slice.
 }
 
-void MainWindow::stopSimulation()const {
-    startButton->setEnabled(true);
-    stopButton->setEnabled(false);
+void MainWindow::cancelFiniteRun() {
+    if (remainingSteps) stopSimulation();
+}
 
+void MainWindow::stopSimulation() {
+    if (!autoRunTimer->isActive()) return;
     autoRunTimer->stop();
+    remainingSteps.reset();
+    startButton->setEnabled(true);
+    quickStepsButton->setEnabled(true);
+    stepButton->setEnabled(true);
+    stopButton->setEnabled(false);
+    antField->publishPosition();
+    updateQuickStatistics();
 }
 
-void MainWindow::autoStep()const {
-    antField->nextStep(STEP_COUNT);
-
-    updateQuickStatistics();
+void MainWindow::autoStep() {
+    constexpr int sliceBudgetMs = 4;
+    constexpr int frameIntervalMs = 16;
+    const qint64 limit = remainingSteps.value_or(std::numeric_limits<qint64>::max());
+    const qint64 done = antField->advanceSteps(limit, sliceBudgetMs);
+    if (remainingSteps) *remainingSteps -= done;
+    if (remainingSteps == 0 || done == 0) {
+        stopSimulation();
+    } else if (lastFrame.elapsed() >= frameIntervalMs) {
+        lastFrame.restart();
+        antField->publishPosition();
+    }
 }

@@ -10,6 +10,8 @@
 #include <QMutex>
 #include <QElapsedTimer>
 #include <QTimer>
+#include <QFutureWatcher>
+#include <atomic>
 #include "QPoint64.h"
 #include <unordered_map>
 #include <vector>
@@ -47,11 +49,20 @@ struct Chunk {
     void markRead(int index) { readMask[index / 8] |= 1u << (index % 8); }
 };
 
+constexpr int cachedRankCount = 20;
+
 struct StatChunk {
     qint64 visits[CHUNK_AREA] = {0};
-    qint64 corners[CHUNK_AREA][4] = {0};
+    qint64 corners[CHUNK_AREA][4]{};
     qint64 firstVisitStep[CHUNK_AREA]{};
     qint64 lastVisitStep[CHUNK_AREA] = {0};
+
+    qint64 maxVisits = 0;
+    std::array<int, cachedRankCount> topIndices{};
+    int topCount = 0;
+    bool rankingDirty = true;
+
+    void refreshRanking();
 
     StatChunk() {
         std::fill_n(firstVisitStep, CHUNK_AREA, -1);
@@ -100,11 +111,14 @@ public:
     QColor cellColor(uint32_t state) const;
     void setDiagonalStates(const QBitArray &states);
     std::optional<HighwayAnalysis> analyzeHighway() const;
+    void startHighwayCheck();
     void showHighwayWindow(const HighwayAnalysis &highway);
     void clearHighwayWindow();
     bool hasCompleteReadHistory() const { return completeReadHistory; }
     void reset();
     void nextStep(qint64 steps = 1);
+    qint64 advanceSteps(qint64 limit, int timeBudgetMs);
+    void publishPosition();
     void setCellSize(int size);
     void setZoom(double zoom);
     void randomizeArea(qint64 radius);
@@ -124,6 +138,7 @@ public:
     qint64 getTotalVisitedCells() const;
     qint64 getUniqueVisitedCells() const;
     AntStatisticsSummary getStatisticsSummary() const;
+    bool exportStatistics(const QString &filename) const;
     bool saveState(const QString &filename) const;
     bool loadState(const QString &filename);
     QString getRules() const;
@@ -137,6 +152,8 @@ public slots:
 
 signals:
     void highwayWindowCleared();
+    void highwayChecked(int period);
+    void stateAboutToLoad();
     void antMoved(qint64 x, qint64 y, int direction, qint64 steps);
     void zoomChanged(double zoom);
     void stepsChanged(qint64 steps);
@@ -161,16 +178,20 @@ protected:
 private:
     // Coordinate conversion
     QPoint64 screenToField(const QPoint64 &screenPos) const;
-    QPoint64 fieldToScreen(const QPoint64 &fieldPos) const;
+    double screenX(qint64 x) const;
+    double screenY(qint64 y) const;
 
     // Drawing and state management
+    std::optional<HighwayAnalysis> findHighway(const std::atomic_bool *cancel) const;
+    void cancelHighwayCheck();
+    void advanceBlock(qint64 steps);
     void redrawBuffer();
-    void redrawBufferZoomedOut(long long startCX, long long endCX, long long startCY, long long endCY);
-    void updateStateColors();
-    void resetDiagonalStates();
+    void redrawBufferZoomedOut(QPainter &painter, qint64 startCX, qint64 endCX, qint64 startCY, qint64 endCY);
+    struct CompiledRules;
+    void installRules(CompiledRules &&compiled);
     QColor stateToColor(uint32_t state) const;
     uint32_t previousState(uint32_t state) const;
-    void turnAndRecolor(uint32_t &state, int &direction) const;
+    int recolorAndGetTurn(uint32_t &state) const;
 
 
     // Mouse position tracking
@@ -190,6 +211,8 @@ private:
     // QHash<QPair<qint64, qint64>, CellStatistics> cellStatistics;
     QVector<QColor> stateColorCache;
 
+    QFutureWatcher<std::optional<HighwayAnalysis>> *highwayJob = nullptr;
+    std::atomic_bool cancelHighway{false};
     std::vector<HighwayWindowCell> highlightedWindow;
     bool completeReadHistory = true;
     qint64 lastBoardEdit = 0;
@@ -206,15 +229,19 @@ private:
 
 
     // View state
+    QPoint64 viewOrigin;
     qreal offsetX = 0, offsetY = 0;
     double zoomFactor = 1.0;
     int cellSize = 6;
 
     // Statistics state - simplified and optimized
     QPoint64 mostVisitedCell;
+    qint64 trackedVisits = 0;
     qint64 maxVisits = 0;
     qint64 uniqueCellsCount = 0;
     bool statisticsEnabled = true;
+    mutable QVector<QPair<QPoint64, qint64>> cachedTopCells;
+    mutable bool rankingDirty = true;
     mutable QMutex statisticsMutex;
     QElapsedTimer simulationTimer;
 

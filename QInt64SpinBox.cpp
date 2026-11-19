@@ -94,8 +94,21 @@ void QInt64SpinBox::stepBy(const int steps)
 {
     if (steps == 0)
         return;
-    const qint64 newVal = m_value + static_cast<qint64>(steps) * m_singleStep;
-    setValue(newVal);
+    // Signed distance between the endpoints can exceed INT64_MAX.
+    const bool up = steps > 0;
+    const quint64 room = up ? quint64(m_maximum) - quint64(m_value)
+                            : quint64(m_value) - quint64(m_minimum);
+    const quint64 count = up ? qint64(steps) : -qint64(steps);
+    if (count > room / quint64(m_singleStep)) {
+        setValue(up ? m_maximum : m_minimum);
+        return;
+    }
+    constexpr auto minimum = std::numeric_limits<qint64>::min();
+    constexpr quint64 midpoint = quint64(1) << 63;
+    const quint64 position = quint64(m_value) - quint64(minimum);
+    const quint64 distance = count * quint64(m_singleStep);
+    const quint64 next = up ? position + distance : position - distance;
+    setValue(next >= midpoint ? qint64(next - midpoint) : minimum + qint64(next));
 }
 
 QAbstractSpinBox::StepEnabled QInt64SpinBox::stepEnabled() const
@@ -120,7 +133,7 @@ QValidator::State QInt64SpinBox::validate(QString &input, int &pos) const
         return QValidator::Invalid;
 
     bool ok;
-    qint64 val = text.remove(QLocale().groupSeparator()).toLongLong(&ok);
+    qint64 val = locale().toLongLong(text, &ok);
     if (!ok)
         return QValidator::Invalid;
     if (val < m_minimum || val > m_maximum)
@@ -137,7 +150,7 @@ void QInt64SpinBox::fixup(QString &input) const
     text = text.trimmed();
 
     bool ok;
-    qint64 val = text.remove(QLocale().groupSeparator()).toLongLong(&ok);
+    qint64 val = locale().toLongLong(text, &ok);
     if (!ok)
         val = m_minimum;
     else
@@ -148,9 +161,7 @@ void QInt64SpinBox::fixup(QString &input) const
 
 QString QInt64SpinBox::textFromValue(qint64 val) const
 {
-    if (m_suffix.isEmpty())
-        return QString::number(val);
-    return QLocale().toString(val) + m_suffix;
+    return locale().toString(val) + m_suffix;
 }
 
 qint64 QInt64SpinBox::valueFromText(const QString &text) const
@@ -158,7 +169,7 @@ qint64 QInt64SpinBox::valueFromText(const QString &text) const
     QString t = text.trimmed();
     if (!m_suffix.isEmpty() && t.endsWith(m_suffix))
         t.chop(m_suffix.length());
-    return t.remove(QLocale().groupSeparator()).toLongLong();
+    return locale().toLongLong(t);
 }
 
 void QInt64SpinBox::onEditingFinished()

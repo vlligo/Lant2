@@ -17,8 +17,6 @@ class QTableWidget;
 class QGroupBox;
 class QTimer;
 
-constexpr int64_t STEP_COUNT = 10000000;
-
 class MainWindow : public QMainWindow {
     Q_OBJECT
 
@@ -28,10 +26,10 @@ public:
 private slots:
     void updateRules();
     void onAntMoved(qint64 x, qint64 y, int direction, qint64 steps) const;
-    void updateStatisticsTable() const;
+    void updateStatisticsTable();
     void takeStep() const;
     void onQuickStepsClicked();
-    void resetSimulation() const;
+    void resetSimulation();
     void centerView() const;
     void centerOnMostVisited() const;
     void centerOnCoordinates();
@@ -42,7 +40,7 @@ private slots:
     void changeCellSize();
     void loadPreset(int index);
     void showStatistics();
-    void toggleStatistics(bool enabled) const;
+    void toggleStatistics(bool enabled);
     void saveState();
     void loadState();
     void showCellDetails();
@@ -52,14 +50,16 @@ private slots:
     void changeStyle();
     void showHighwayAnalysis();
     void randomizeArea();
-    void startSimulation()const;
-    void stopSimulation()const;
-    void autoStep()const;
+    void startSimulation();
+    void stopSimulation();
+    void autoStep();
 
 private:
     void loadPresets();
     void setupUI();
     void setupConnections();
+    void beginRun(std::optional<qint64> steps);
+    void cancelFiniteRun();
     void updateQuickStatistics() const;
 
     QHash<int, QString> presets;
@@ -115,6 +115,10 @@ private:
     QPushButton *saveButton{};
     QPushButton *loadButton{};
 
+    // An empty count represents continuous mode while the run timer is active.
+    std::optional<qint64> remainingSteps;
+    QElapsedTimer lastFrame;
+    QVector<QPair<QPoint64, qint64>> displayedTopCells;
     qint64 lastCustomSteps = 1000;
     int currentStyleIndex = 0;
 };

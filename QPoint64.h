@@ -112,4 +112,9 @@ inline QDebug operator<<(QDebug dbg, const QPoint64 &p)
 }
 #endif
 
+#if defined(QPOINT64_QT)
+#  include <QMetaType>
+Q_DECLARE_METATYPE(QPoint64)
+#endif
+
 #endif // QPOINT64_H
